@@ -11,11 +11,33 @@ class DatabaseService {
 
   static Future<Database> _initDb() async {
     final path = join(await getDatabasesPath(), 'coleta_leite.db');
-    return openDatabase(path, version: 1, onCreate: _onCreate);
+    return openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   static Future<void> _onCreate(Database db, int version) async {
     await _createTables(db);
+  }
+
+  /// Migrações incrementais e não-destrutivas.
+  /// v2: coluna pending_sync (marca linhas alteradas localmente e ainda não
+  ///     enviadas ao servidor, para o download não as sobrescrever).
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      for (final tabela in ['coletas_detalhe', 'coletas_rota']) {
+        try {
+          await db.execute(
+            'ALTER TABLE $tabela ADD COLUMN pending_sync INTEGER NOT NULL DEFAULT 0',
+          );
+        } catch (_) {
+          // coluna já existe — ignora
+        }
+      }
+    }
   }
 
   // ---- DDL ----
@@ -81,7 +103,8 @@ class DatabaseService {
       data_coleta TEXT NOT NULL,
       data_hora_inicio TEXT,
       data_hora_fim TEXT,
-      status TEXT NOT NULL DEFAULT 'PENDENTE'
+      status TEXT NOT NULL DEFAULT 'PENDENTE',
+      pending_sync INTEGER NOT NULL DEFAULT 0
     )''');
 
     b.execute('''CREATE TABLE coletas_detalhe (
@@ -95,7 +118,8 @@ class DatabaseService {
       observacao TEXT DEFAULT '',
       motivo_adiamento TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'PENDENTE',
-      foto_caminho TEXT
+      foto_caminho TEXT,
+      pending_sync INTEGER NOT NULL DEFAULT 0
     )''');
 
     await b.commit(noResult: true);
@@ -181,9 +205,21 @@ class DatabaseService {
   static Future<void> updateColetaRota(int id, Map<String, dynamic> data) async =>
       (await database).update('coletas_rota', data, where: 'id = ?', whereArgs: [id]);
 
-  static Future<void> upsertColetaRota(Map<String, dynamic> data) async =>
-      (await database).insert('coletas_rota', data,
-          conflictAlgorithm: ConflictAlgorithm.replace);
+  /// Grava uma rota vinda do servidor SEM sobrescrever alterações locais
+  /// ainda não sincronizadas (pending_sync = 1). Dado do servidor entra
+  /// sempre com pending_sync = 0.
+  static Future<void> upsertColetaRota(Map<String, dynamic> data) async {
+    final db = await database;
+    final id = data['id'];
+    if (id != null && await _isPending(db, 'coletas_rota', id as int)) {
+      return; // mantém a versão local não enviada
+    }
+    await db.insert(
+      'coletas_rota',
+      {...data, 'pending_sync': 0},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 
   static Future<List<Map<String, dynamic>>> getColetasRotaComJoin() async =>
       (await database).rawQuery('''
@@ -205,9 +241,62 @@ class DatabaseService {
   static Future<void> updateColetaDetalhe(int id, Map<String, dynamic> data) async =>
       (await database).update('coletas_detalhe', data, where: 'id = ?', whereArgs: [id]);
 
-  static Future<void> upsertColetaDetalhe(Map<String, dynamic> data) async =>
-      (await database).insert('coletas_detalhe', data,
-          conflictAlgorithm: ConflictAlgorithm.replace);
+  /// Grava um detalhe vindo do servidor SEM sobrescrever coletas registradas
+  /// localmente e ainda não enviadas (pending_sync = 1).
+  static Future<void> upsertColetaDetalhe(Map<String, dynamic> data) async {
+    final db = await database;
+    final id = data['id'];
+    if (id != null && await _isPending(db, 'coletas_detalhe', id as int)) {
+      return; // mantém a coleta local não enviada
+    }
+    await db.insert(
+      'coletas_detalhe',
+      {...data, 'pending_sync': 0},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  // ---- Fila de sincronização (pending_sync) ----
+
+  static Future<bool> _isPending(Database db, String tabela, int id) async {
+    final rows = await db.query(
+      tabela,
+      columns: ['pending_sync'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    return (rows.first['pending_sync'] as int? ?? 0) == 1;
+  }
+
+  /// Detalhes de coleta alterados localmente e ainda não enviados ao servidor.
+  static Future<List<Map<String, dynamic>>> getPendingDetalhes() async =>
+      (await database).query('coletas_detalhe', where: 'pending_sync = 1');
+
+  /// Rotas alteradas localmente e ainda não enviadas ao servidor.
+  static Future<List<Map<String, dynamic>>> getPendingRotas() async =>
+      (await database).query('coletas_rota', where: 'pending_sync = 1');
+
+  /// Marca um detalhe como sincronizado (push confirmado pelo servidor).
+  static Future<void> markDetalheSynced(int id) async =>
+      (await database).update('coletas_detalhe', {'pending_sync': 0},
+          where: 'id = ?', whereArgs: [id]);
+
+  /// Marca uma rota como sincronizada (push confirmado pelo servidor).
+  static Future<void> markRotaSynced(int id) async =>
+      (await database).update('coletas_rota', {'pending_sync': 0},
+          where: 'id = ?', whereArgs: [id]);
+
+  /// Quantidade de itens aguardando envio (detalhes + rotas).
+  static Future<int> countPending() async {
+    final db = await database;
+    final d = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM coletas_detalhe WHERE pending_sync = 1')) ?? 0;
+    final r = Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM coletas_rota WHERE pending_sync = 1')) ?? 0;
+    return d + r;
+  }
 
   static Future<List<Map<String, dynamic>>> getColetasDetalheComJoin(int idColetaRota) async =>
       (await database).rawQuery('''
