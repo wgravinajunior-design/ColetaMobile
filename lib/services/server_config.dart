@@ -6,7 +6,9 @@ class ServerConfig {
   static const _keyPorta = 'server_porta';
 
   static const String _defaultIp = '192.168.1.1';
-  static const String _defaultPorta = '3000';
+  // Backend embutido na retaguarda escuta em 0.0.0.0:8080.
+  // (O IP deve ser o da máquina que roda a retaguarda, configurável na tela de conexão.)
+  static const String _defaultPorta = '8080';
 
   static Future<String> getIp() async {
     final prefs = await SharedPreferences.getInstance();

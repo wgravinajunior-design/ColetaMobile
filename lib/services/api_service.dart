@@ -106,6 +106,15 @@ class ApiService {
     }
   }
 
+  /// Extrai a lista de itens da resposta, aceitando os dois formatos:
+  /// `{success, data:[...]}` (padrão atual do backend) ou um array puro.
+  static List _extractList(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is List) return decoded;
+    if (decoded is Map && decoded['data'] is List) return decoded['data'] as List;
+    return const [];
+  }
+
   // ─── Autenticação ──────────────────────────────────────────────────────────
 
   /// Autentica o usuário no servidor.
@@ -184,7 +193,7 @@ class ApiService {
   static Future<void> _syncResfriadores() async {
     final res = await _get('/coleta/resfriadores');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertResfriador({
@@ -202,7 +211,7 @@ class ApiService {
   static Future<void> _syncProdutores() async {
     final res = await _get('/coleta/produtores');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertProdutor({
@@ -223,7 +232,7 @@ class ApiService {
   static Future<void> _syncVeiculos() async {
     final res = await _get('/coleta/veiculos');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertVeiculo({
@@ -240,7 +249,7 @@ class ApiService {
   static Future<void> _syncMotoristas() async {
     final res = await _get('/coleta/motoristas');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertMotorista({
@@ -257,7 +266,7 @@ class ApiService {
   static Future<void> _syncColaboradores() async {
     final res = await _get('/coleta/colaboradores');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertColaborador({
@@ -274,7 +283,7 @@ class ApiService {
   static Future<void> _syncRotas() async {
     final res = await _get('/coleta/rotas');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       final rotaId = m['id'] as int;
@@ -297,7 +306,7 @@ class ApiService {
   static Future<void> _syncDetalhesRota(int rotaId) async {
     final res = await _get('/coleta/rotas/$rotaId/detalhes');
     if (res.statusCode != 200) return;
-    final list = jsonDecode(res.body) as List;
+    final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       await DatabaseService.upsertColetaDetalhe({
@@ -351,6 +360,30 @@ class ApiService {
     } catch (_) {
       // offline — dado salvo localmente, permanece pendente
       return false;
+    }
+  }
+
+  /// Envia o arquivo de foto de uma coleta (multipart/form-data) ao servidor.
+  /// Retorna o caminho gerenciado no servidor (uploads/paradas/...) em sucesso,
+  /// ou null se offline/erro (nesse caso o caminho local é mantido).
+  static Future<String?> uploadFotoColeta(int coletaId, String localPath) async {
+    try {
+      final base = await ServerConfig.baseUrl;
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('$base/coleta/detalhes/$coletaId/foto'),
+      );
+      final headers = _headers..remove('Content-Type'); // multipart define sozinho
+      req.headers.addAll(headers);
+      req.files.add(await http.MultipartFile.fromPath('foto', localPath));
+
+      final streamed = await req.send().timeout(_kTimeout);
+      if (streamed.statusCode != 200) return null;
+      final res = await http.Response.fromStream(streamed);
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return data['foto_path'] as String?;
+    } catch (_) {
+      return null;
     }
   }
 }
