@@ -183,10 +183,15 @@ class ColetaProvider extends ChangeNotifier {
     super.dispose();
   }
 
+  bool _flushing = false;
+
   Future<void> _init() async {
     _syncStatus = SyncStatus.syncing;
     notifyListeners();
 
+    // Envia primeiro o que ficou pendente de sessões anteriores,
+    // depois baixa as novidades do ERP (o download preserva o que está pendente).
+    await flushPending();
     final ok = await ApiService.syncAll();
     _syncStatus = ok ? SyncStatus.ok : SyncStatus.error;
 
@@ -194,8 +199,9 @@ class ColetaProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
-    // Polling a cada 2 minutos: atualiza rotas liberadas/alteradas pelo ERP
+    // Polling a cada 2 minutos: envia pendentes e atualiza rotas alteradas pelo ERP
     _pollingTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+      await flushPending();
       final synced = await ApiService.syncAll();
       if (synced) {
         _syncStatus = SyncStatus.ok;
@@ -211,11 +217,46 @@ class ColetaProvider extends ChangeNotifier {
     });
   }
 
+  /// Envia ao servidor todas as coletas/rotas registradas localmente e ainda
+  /// não sincronizadas (pending_sync = 1). Itens confirmados pelo servidor têm
+  /// o pending_sync zerado; falhas permanecem pendentes para nova tentativa.
+  /// Seguro para chamar repetidamente (reentrância protegida).
+  Future<void> flushPending() async {
+    if (_flushing) return;
+    _flushing = true;
+    try {
+      for (final r in await DatabaseService.getPendingRotas()) {
+        final ok = await ApiService.pushRotaStatus(
+          r['id'] as int,
+          r['status'] as String,
+          dataHoraInicio: r['data_hora_inicio'] as String?,
+          dataHoraFim: r['data_hora_fim'] as String?,
+        );
+        if (ok) await DatabaseService.markRotaSynced(r['id'] as int);
+      }
+      for (final d in await DatabaseService.getPendingDetalhes()) {
+        final ok = await ApiService.pushColetaDetalhe(d['id'] as int, {
+          'volume_coletado_litros': d['volume_coletado_litros'],
+          'temperatura_leite_c': d['temperatura_leite_c'],
+          'observacao': d['observacao'],
+          'motivo_adiamento': d['motivo_adiamento'],
+          'foto_caminho': d['foto_caminho'],
+          'data_hora_registro': d['data_hora_registro'],
+          'status': d['status'],
+        });
+        if (ok) await DatabaseService.markDetalheSynced(d['id'] as int);
+      }
+    } finally {
+      _flushing = false;
+    }
+  }
+
   /// Força uma nova sincronização manual com o servidor.
   Future<void> refresh() async {
     _syncStatus = SyncStatus.syncing;
     notifyListeners();
 
+    await flushPending();
     final ok = await ApiService.syncAll();
     _syncStatus = ok ? SyncStatus.ok : SyncStatus.error;
 
@@ -413,8 +454,11 @@ class ColetaProvider extends ChangeNotifier {
     rota.dataHoraInicio = now;
     notifyListeners();
     final nowStr = now.toIso8601String();
-    DatabaseService.updateColetaRota(rotaId, {'status': 'EM_ANDAMENTO', 'data_hora_inicio': nowStr});
-    ApiService.pushRotaStatus(rotaId, 'EM_ANDAMENTO', dataHoraInicio: nowStr);
+    DatabaseService.updateColetaRota(rotaId, {
+      'status': 'EM_ANDAMENTO',
+      'data_hora_inicio': nowStr,
+      'pending_sync': 1,
+    }).then((_) => flushPending());
   }
 
   void realizarColeta({
@@ -444,9 +488,10 @@ class ColetaProvider extends ChangeNotifier {
       'foto_caminho': fotoPath,
       'data_hora_registro': now.toIso8601String(),
       'status': _coletaStatusStr(coleta.status),
+      'pending_sync': 1,
     };
-    DatabaseService.updateColetaDetalhe(coletaId, detalheData);
-    ApiService.pushColetaDetalhe(coletaId, detalheData);
+    DatabaseService.updateColetaDetalhe(coletaId, detalheData)
+        .then((_) => flushPending());
   }
 
   void adiarColeta({required int rotaId, required int coletaId, required String motivo}) {
@@ -462,9 +507,10 @@ class ColetaProvider extends ChangeNotifier {
       'status': 'ADIADO',
       'motivo_adiamento': motivo,
       'data_hora_registro': now.toIso8601String(),
+      'pending_sync': 1,
     };
-    DatabaseService.updateColetaDetalhe(coletaId, detalheData);
-    ApiService.pushColetaDetalhe(coletaId, detalheData);
+    DatabaseService.updateColetaDetalhe(coletaId, detalheData)
+        .then((_) => flushPending());
   }
 
   void finalizarRota(int rotaId) {
@@ -475,8 +521,11 @@ class ColetaProvider extends ChangeNotifier {
     rota.dataHoraFim = now;
     notifyListeners();
     final nowStr = now.toIso8601String();
-    DatabaseService.updateColetaRota(rotaId, {'status': 'CONCLUIDA', 'data_hora_fim': nowStr});
-    ApiService.pushRotaStatus(rotaId, 'CONCLUIDA', dataHoraFim: nowStr);
+    DatabaseService.updateColetaRota(rotaId, {
+      'status': 'CONCLUIDA',
+      'data_hora_fim': nowStr,
+      'pending_sync': 1,
+    }).then((_) => flushPending());
   }
 
   void _atualizarStatusRota(int rotaId) {

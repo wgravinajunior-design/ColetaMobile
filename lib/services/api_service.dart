@@ -319,8 +319,9 @@ class ApiService {
   // ─── Push de mudanças ao servidor ─────────────────────────────────────────
 
   /// Atualiza status da rota no servidor.
-  /// Chamado em background — falhas são silenciosas (dado já está no SQLite).
-  static Future<void> pushRotaStatus(
+  /// Retorna true se o servidor confirmou (para limpar pending_sync local).
+  /// Falhas são silenciosas (dado já está no SQLite e continua pendente).
+  static Future<bool> pushRotaStatus(
     int id,
     String status, {
     String? dataHoraInicio,
@@ -330,21 +331,26 @@ class ApiService {
       final body = <String, dynamic>{'status': status};
       if (dataHoraInicio != null) body['data_hora_inicio'] = dataHoraInicio;
       if (dataHoraFim != null) body['data_hora_fim'] = dataHoraFim;
-      await _put('/coleta/rotas/$id', body);
+      final res = await _put('/coleta/rotas/$id', body);
+      return res.statusCode == 200;
     } catch (_) {
-      // offline — SQLite já foi atualizado
+      // offline — SQLite já foi atualizado, permanece pendente
+      return false;
     }
   }
 
   /// Atualiza dados de uma coleta detalhe no servidor.
-  static Future<void> pushColetaDetalhe(
+  /// Retorna true se o servidor confirmou (para limpar pending_sync local).
+  static Future<bool> pushColetaDetalhe(
     int id,
     Map<String, dynamic> data,
   ) async {
     try {
-      await _put('/coleta/detalhes/$id', data);
+      final res = await _put('/coleta/detalhes/$id', data);
+      return res.statusCode == 200;
     } catch (_) {
-      // offline — dado salvo localmente
+      // offline — dado salvo localmente, permanece pendente
+      return false;
     }
   }
 }
