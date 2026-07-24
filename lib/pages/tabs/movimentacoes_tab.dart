@@ -4,14 +4,57 @@ import '../../main.dart' show AppColors;
 import '../../providers/coleta_provider.dart';
 import '../rota_detalhe_page.dart';
 
-class MovimentacoesTab extends StatelessWidget {
+class MovimentacoesTab extends StatefulWidget {
   final String userRole;
   const MovimentacoesTab({super.key, required this.userRole});
 
   @override
+  State<MovimentacoesTab> createState() => _MovimentacoesTabState();
+}
+
+class _MovimentacoesTabState extends State<MovimentacoesTab> {
+  /// Começa no dia de hoje: é a rota que o motorista vai rodar agora.
+  DateTime? _data = DateTime.now();
+  RotaStatus? _status;
+
+  bool _mesmoDia(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  List<Rota> _filtrar(List<Rota> rotas) {
+    return rotas.where((r) {
+      if (_data != null && !_mesmoDia(r.data, _data!)) return false;
+      if (_status != null && r.status != _status) return false;
+      return true;
+    }).toList();
+  }
+
+  Future<void> _escolherData() async {
+    final hoje = DateTime.now();
+    final escolhida = await showDatePicker(
+      context: context,
+      initialDate: _data ?? hoje,
+      firstDate: DateTime(hoje.year - 1),
+      lastDate: DateTime(hoje.year + 1),
+      locale: const Locale('pt', 'BR'),
+    );
+    if (escolhida != null) setState(() => _data = escolhida);
+  }
+
+  String get _rotuloData {
+    if (_data == null) return 'Todas as datas';
+    final hoje = DateTime.now();
+    if (_mesmoDia(_data!, hoje)) return 'Hoje';
+    if (_mesmoDia(_data!, hoje.subtract(const Duration(days: 1)))) {
+      return 'Ontem';
+    }
+    String dois(int n) => n.toString().padLeft(2, '0');
+    return '${dois(_data!.day)}/${dois(_data!.month)}/${_data!.year}';
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = Provider.of<ColetaProvider>(context);
-    final rotas = provider.rotas;
+    final visiveis = _filtrar(provider.rotas);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -33,35 +76,109 @@ class MovimentacoesTab extends StatelessWidget {
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Rotas de Coleta',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-              Text('${rotas.length} rota(s) disponível(is)',
+              Text('${visiveis.length} de ${provider.rotas.length} rota(s)',
                   style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
             ]),
           ]),
         ),
+        _buildFiltros(),
         const Divider(height: 1),
 
         // Lista de rotas
         Expanded(
-          child: rotas.isEmpty
-              ? const Center(
+          child: visiveis.isEmpty
+              ? Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.route_outlined, size: 56, color: AppColors.textLight),
-                      SizedBox(height: 12),
-                      Text('Nenhuma rota disponível.',
-                          style: TextStyle(color: AppColors.textLight, fontSize: 14)),
+                      const Icon(Icons.route_outlined, size: 56, color: AppColors.textLight),
+                      const SizedBox(height: 12),
+                      Text(
+                        _data != null || _status != null
+                            ? 'Nenhuma rota para este filtro.'
+                            : 'Nenhuma rota disponível.',
+                        style: const TextStyle(color: AppColors.textLight, fontSize: 14),
+                      ),
+                      if (_data != null || _status != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          icon: const Icon(Icons.filter_alt_off, size: 18),
+                          label: const Text('Limpar filtros'),
+                          onPressed: () => setState(() {
+                            _data = null;
+                            _status = null;
+                          }),
+                        ),
+                      ],
                     ],
                   ),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(14),
-                  itemCount: rotas.length,
+                  itemCount: visiveis.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _RotaCard(rota: rotas[i]),
+                  itemBuilder: (_, i) => _RotaCard(rota: visiveis[i]),
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFiltros() {
+    const statusLabels = {
+      RotaStatus.pendente: 'Pendente',
+      RotaStatus.liberada: 'Liberada',
+      RotaStatus.emAndamento: 'Em andamento',
+      RotaStatus.finalizada: 'Finalizada',
+    };
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.calendar_today, size: 16),
+              label: Text(_rotuloData, overflow: TextOverflow.ellipsis),
+              onPressed: _escolherData,
+            ),
+          ),
+          // Só aparece com filtro de data ativo — volta para "todas as datas".
+          if (_data != null)
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: 'Todas as datas',
+              onPressed: () => setState(() => _data = null),
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonFormField<RotaStatus?>(
+              initialValue: _status,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(),
+              ),
+              hint: const Text('Status'),
+              items: [
+                const DropdownMenuItem<RotaStatus?>(
+                  value: null,
+                  child: Text('Todos os status'),
+                ),
+                ...statusLabels.entries.map(
+                  (e) => DropdownMenuItem<RotaStatus?>(
+                    value: e.key,
+                    child: Text(e.value),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _status = v),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
