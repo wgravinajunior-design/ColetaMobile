@@ -4,6 +4,8 @@ import '../main.dart' show AppColors;
 import '../providers/coleta_provider.dart';
 import '../services/server_config.dart';
 import '../services/api_service.dart';
+import '../services/update_service.dart';
+import '../widgets/update_dialogs.dart';
 import 'tabs/cadastros_tab.dart';
 import 'tabs/movimentacoes_tab.dart';
 import 'tabs/dashboard_tab.dart';
@@ -21,8 +23,40 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  bool get _isMotorista =>
-      widget.userRole.toUpperCase() == 'MOTORISTA';
+  /// Só uma vez por execução, mesmo que a Home seja reconstruída.
+  static bool _jaVerificouAtualizacao = false;
+
+  bool get _isMotorista => widget.userRole.toUpperCase() == 'MOTORISTA';
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_jaVerificouAtualizacao) {
+      _jaVerificouAtualizacao = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _rodarAtualizacao());
+    }
+  }
+
+  /// Mostra as novidades da versão recém instalada e depois avisa se há uma
+  /// versão mais nova. Nunca interrompe o uso: falha de rede é ignorada.
+  Future<void> _rodarAtualizacao() async {
+    final anterior = await UpdateService.versaoVista();
+    if (anterior == null) {
+      // Primeira execução: só registra, sem popup de novidades.
+      await UpdateService.marcarVersaoVista(appVersao);
+    } else if (anterior != appVersao) {
+      final notas = await UpdateService.notasDaVersaoAtual();
+      await UpdateService.marcarVersaoVista(appVersao);
+      if (mounted && notas != null && notas.trim().isNotEmpty) {
+        await DialogoNovidades.mostrar(context, notas);
+      }
+    }
+
+    if (!mounted) return;
+    final nova = await UpdateService.verificar();
+    if (!mounted || nova == null) return;
+    await DialogoAtualizacao.mostrar(context, nova);
+  }
 
   List<Widget> get _tabs => _isMotorista
       ? [MovimentacoesTab(userRole: widget.userRole)]
@@ -38,15 +72,21 @@ class _HomePageState extends State<HomePage> {
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Confirmar Saída',
-            style: TextStyle(color: AppColors.textDark)),
-        content: const Text('Tem certeza que deseja sair do sistema?',
-            style: TextStyle(color: AppColors.textMedium)),
+        title: const Text(
+          'Confirmar Saída',
+          style: TextStyle(color: AppColors.textDark),
+        ),
+        content: const Text(
+          'Tem certeza que deseja sair do sistema?',
+          style: TextStyle(color: AppColors.textMedium),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar',
-                style: TextStyle(color: AppColors.textLight)),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: AppColors.textLight),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -70,13 +110,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _abrirConfiguracoes() {
-    showDialog(context: context, builder: (_) => const _ConfiguracaoHomeDialog());
+    showDialog(
+      context: context,
+      builder: (_) => const _ConfiguracaoHomeDialog(),
+    );
   }
 
   void _abrirAtualizar() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AtualizarPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const AtualizarPage()));
   }
 
   @override
@@ -89,8 +132,10 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('ColetaLeite ERP'),
-            Text('Perfil: ${widget.userRole}',
-                style: const TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(
+              'Perfil: ${widget.userRole}',
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
           ],
         ),
         actions: [
@@ -98,28 +143,42 @@ class _HomePageState extends State<HomePage> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.menu_rounded, size: 26),
             tooltip: 'Menu',
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             color: Colors.white,
             offset: const Offset(0, 48),
             onSelected: (value) {
-              if (value == 'atualizar')       _abrirAtualizar();
-              if (value == 'configuracoes')   _abrirConfiguracoes();
-              if (value == 'sair')            _handleLogout();
+              if (value == 'atualizar') _abrirAtualizar();
+              if (value == 'configuracoes') _abrirConfiguracoes();
+              if (value == 'sair') _handleLogout();
             },
             itemBuilder: (_) => [
               const PopupMenuItem<String>(
                 value: 'atualizar',
-                child: _MenuItemRow(icon: Icons.sync_rounded, label: 'Atualizar Dados', color: AppColors.primary),
+                child: _MenuItemRow(
+                  icon: Icons.sync_rounded,
+                  label: 'Atualizar Dados',
+                  color: AppColors.primary,
+                ),
               ),
               const PopupMenuDivider(),
               const PopupMenuItem<String>(
                 value: 'configuracoes',
-                child: _MenuItemRow(icon: Icons.settings_outlined, label: 'Configurações', color: AppColors.textMedium),
+                child: _MenuItemRow(
+                  icon: Icons.settings_outlined,
+                  label: 'Configurações',
+                  color: AppColors.textMedium,
+                ),
               ),
               const PopupMenuDivider(),
               const PopupMenuItem<String>(
                 value: 'sair',
-                child: _MenuItemRow(icon: Icons.logout_rounded, label: 'Sair', color: AppColors.error),
+                child: _MenuItemRow(
+                  icon: Icons.logout_rounded,
+                  label: 'Sair',
+                  color: AppColors.error,
+                ),
               ),
             ],
           ),
@@ -187,7 +246,11 @@ class _RodapeVersao extends StatelessWidget {
         children: const [
           Text(
             'Build 1.2',
-            style: TextStyle(fontSize: 11, color: AppColors.textLight, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textLight,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           SizedBox(height: 2),
           Text(
@@ -205,15 +268,28 @@ class _MenuItemRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  const _MenuItemRow({required this.icon, required this.label, required this.color});
+  const _MenuItemRow({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Icon(icon, color: color, size: 20),
-      const SizedBox(width: 12),
-      Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 14)),
-    ]);
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -222,11 +298,12 @@ class _ConfiguracaoHomeDialog extends StatefulWidget {
   const _ConfiguracaoHomeDialog();
 
   @override
-  State<_ConfiguracaoHomeDialog> createState() => _ConfiguracaoHomeDialogState();
+  State<_ConfiguracaoHomeDialog> createState() =>
+      _ConfiguracaoHomeDialogState();
 }
 
 class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
-  final _ipCtrl    = TextEditingController();
+  final _ipCtrl = TextEditingController();
   final _portaCtrl = TextEditingController();
   bool _testando = false;
   bool _salvando = false;
@@ -239,7 +316,7 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
   }
 
   Future<void> _carregar() async {
-    _ipCtrl.text    = await ServerConfig.getIp();
+    _ipCtrl.text = await ServerConfig.getIp();
     _portaCtrl.text = await ServerConfig.getPorta();
     if (mounted) setState(() {});
   }
@@ -252,15 +329,24 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
   }
 
   Future<void> _testar() async {
-    final ip = _ipCtrl.text.trim(); final porta = _portaCtrl.text.trim();
+    final ip = _ipCtrl.text.trim();
+    final porta = _portaCtrl.text.trim();
     if (ip.isEmpty || porta.isEmpty) return;
-    setState(() { _testando = true; _statusTeste = null; });
+    setState(() {
+      _testando = true;
+      _statusTeste = null;
+    });
     final erro = await ServerConfig.testarConexao(ip, porta);
-    if (mounted) setState(() { _testando = false; _statusTeste = erro ?? ''; });
+    if (mounted)
+      setState(() {
+        _testando = false;
+        _statusTeste = erro ?? '';
+      });
   }
 
   Future<void> _salvar() async {
-    final ip = _ipCtrl.text.trim(); final porta = _portaCtrl.text.trim();
+    final ip = _ipCtrl.text.trim();
+    final porta = _portaCtrl.text.trim();
     if (ip.isEmpty || porta.isEmpty) return;
     setState(() => _salvando = true);
     await ServerConfig.salvar(ip, porta);
@@ -268,7 +354,10 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
       setState(() => _salvando = false);
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configuração salva!'), backgroundColor: AppColors.success),
+        const SnackBar(
+          content: Text('Configuração salva!'),
+          backgroundColor: AppColors.success,
+        ),
       );
     }
   }
@@ -279,64 +368,114 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.dns_rounded, color: AppColors.primary, size: 22),
-        ),
-        const SizedBox(width: 12),
-        const Text('Configuração do Servidor',
-            style: TextStyle(color: AppColors.textDark, fontSize: 17, fontWeight: FontWeight.bold)),
-      ]),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.dns_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Configuração do Servidor',
+            style: TextStyle(
+              color: AppColors.textDark,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 340,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Informe o IP e a porta do servidor da retaguarda na rede local.',
-                style: TextStyle(color: AppColors.textLight, fontSize: 13)),
+            const Text(
+              'Informe o IP e a porta do servidor da retaguarda na rede local.',
+              style: TextStyle(color: AppColors.textLight, fontSize: 13),
+            ),
             const SizedBox(height: 20),
             TextField(
               controller: _ipCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Endereço IP', hintText: '192.168.1.100', prefixIcon: Icon(Icons.computer_outlined)),
+              decoration: const InputDecoration(
+                labelText: 'Endereço IP',
+                hintText: '192.168.1.100',
+                prefixIcon: Icon(Icons.computer_outlined),
+              ),
               onChanged: (_) => setState(() => _statusTeste = null),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: _portaCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Porta', hintText: '8080', prefixIcon: Icon(Icons.settings_ethernet)),
+              decoration: const InputDecoration(
+                labelText: 'Porta',
+                hintText: '8080',
+                prefixIcon: Icon(Icons.settings_ethernet),
+              ),
               onChanged: (_) => setState(() => _statusTeste = null),
             ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
               onPressed: _testando ? null : _testar,
               icon: _testando
-                  ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.wifi_tethering, size: 18),
               label: Text(_testando ? 'Testando...' : 'Testar Conexão'),
             ),
             if (_statusTeste != null) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: sucesso ? AppColors.success.withValues(alpha: 0.08) : AppColors.error.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: sucesso ? AppColors.success.withValues(alpha: 0.4) : AppColors.error.withValues(alpha: 0.4)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
                 ),
-                child: Row(children: [
-                  Icon(sucesso ? Icons.check_circle : Icons.error_outline,
-                      color: sucesso ? AppColors.success : AppColors.error, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(
-                    sucesso ? 'Servidor conectado com sucesso!' : _statusTeste!,
-                    style: TextStyle(color: sucesso ? AppColors.success : AppColors.error, fontSize: 13),
-                  )),
-                ]),
+                decoration: BoxDecoration(
+                  color: sucesso
+                      ? AppColors.success.withValues(alpha: 0.08)
+                      : AppColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: sucesso
+                        ? AppColors.success.withValues(alpha: 0.4)
+                        : AppColors.error.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      sucesso ? Icons.check_circle : Icons.error_outline,
+                      color: sucesso ? AppColors.success : AppColors.error,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        sucesso
+                            ? 'Servidor conectado com sucesso!'
+                            : _statusTeste!,
+                        style: TextStyle(
+                          color: sucesso ? AppColors.success : AppColors.error,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
             const SizedBox(height: 16),
@@ -345,7 +484,11 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
             const Text(
               'Build 1.2',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: AppColors.textLight, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.textLight,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 2),
             const Text(
@@ -359,12 +502,22 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar', style: TextStyle(color: AppColors.textLight)),
+          child: const Text(
+            'Cancelar',
+            style: TextStyle(color: AppColors.textLight),
+          ),
         ),
         ElevatedButton.icon(
           onPressed: _salvando ? null : _salvar,
           icon: _salvando
-              ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              ? const SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
               : const Icon(Icons.save, size: 18),
           label: const Text('Salvar'),
         ),
@@ -390,7 +543,10 @@ class _SyncIndicator extends StatelessWidget {
               child: SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               ),
             ),
           );
@@ -429,7 +585,10 @@ class _SyncIndicator extends StatelessWidget {
                   top: -5,
                   child: Container(
                     padding: const EdgeInsets.all(2),
-                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
                     decoration: const BoxDecoration(
                       color: Colors.redAccent,
                       shape: BoxShape.circle,
