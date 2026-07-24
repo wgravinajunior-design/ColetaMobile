@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../main.dart' show AppColors;
+import '../providers/coleta_provider.dart';
 import '../services/server_config.dart';
 import '../services/api_service.dart';
 import 'tabs/cadastros_tab.dart';
@@ -92,6 +94,7 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
+          const _SyncIndicator(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.menu_rounded, size: 26),
             tooltip: 'Menu',
@@ -292,7 +295,7 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Informe o IP e a porta do servidor Delphi/Horse.',
+            const Text('Informe o IP e a porta do servidor da retaguarda na rede local.',
                 style: TextStyle(color: AppColors.textLight, fontSize: 13)),
             const SizedBox(height: 20),
             TextField(
@@ -366,6 +369,86 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
           label: const Text('Salvar'),
         ),
       ],
+    );
+  }
+}
+
+/// Indicador de sincronização no AppBar: mostra spinner ao sincronizar,
+/// um badge com a contagem de coletas pendentes de envio, ou o ícone de
+/// "sincronizado". Tocar força o envio das pendências.
+class _SyncIndicator extends StatelessWidget {
+  const _SyncIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ColetaProvider>(
+      builder: (context, p, _) {
+        if (p.syncStatus == SyncStatus.syncing) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            ),
+          );
+        }
+
+        final pend = p.pendingCount;
+        final fotos = p.pendingFotos;
+        final temPendencia = pend > 0 || fotos > 0;
+        final semRede = p.syncStatus == SyncStatus.error;
+        final IconData icon = temPendencia
+            ? Icons.cloud_upload_rounded
+            : (semRede ? Icons.cloud_off_rounded : Icons.cloud_done_rounded);
+        final badge = pend > 0 ? pend : fotos;
+
+        String tooltip;
+        if (temPendencia) {
+          final partes = <String>[
+            if (pend > 0) '$pend pendente${pend > 1 ? 's' : ''}',
+            if (fotos > 0) '$fotos foto${fotos > 1 ? 's' : ''}',
+          ];
+          tooltip = '${partes.join(' · ')} — tocar para sincronizar';
+        } else {
+          tooltip = semRede ? 'Sem conexão' : 'Sincronizado';
+        }
+
+        return IconButton(
+          tooltip: tooltip,
+          onPressed: () => context.read<ColetaProvider>().flushPending(),
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, color: Colors.white),
+              if (temPendencia)
+                Positioned(
+                  right: -5,
+                  top: -5,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      badge > 99 ? '99+' : '$badge',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

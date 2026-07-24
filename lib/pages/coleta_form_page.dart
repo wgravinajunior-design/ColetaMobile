@@ -72,22 +72,41 @@ class _ColetaFormPageState extends State<ColetaFormPage> {
         maxWidth: 1280,
         maxHeight: 1280,
       );
-      if (foto != null) {
-        setState(() {
-          _fotoNova = foto;
-          _fotoPathExistente = null;
-        });
+      if (foto == null) return; // usuário cancelou
+
+      // Valida o arquivo antes de aceitar (evita foto vazia/gigante).
+      final tamanho = await File(foto.path).length();
+      if (tamanho == 0) {
+        _avisar('A foto veio vazia. Tente novamente.');
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao acessar câmera: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+      if (tamanho > 10 * 1024 * 1024) {
+        _avisar('Foto muito grande (máx. 10 MB).');
+        return;
       }
+
+      setState(() {
+        _fotoNova = foto;
+        _fotoPathExistente = null;
+      });
+    } on PlatformException catch (e) {
+      final code = e.code.toLowerCase();
+      final negada = code.contains('access') ||
+          code.contains('denied') ||
+          code.contains('permission');
+      _avisar(negada
+          ? 'Permissão de câmera negada. Habilite nas configurações do app.'
+          : 'Não foi possível abrir a câmera.');
+    } catch (_) {
+      _avisar('Erro inesperado ao capturar a foto.');
     }
+  }
+
+  void _avisar(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppColors.error),
+    );
   }
 
   void _removerFoto() {
@@ -113,6 +132,12 @@ class _ColetaFormPageState extends State<ColetaFormPage> {
       fotoPath:    _fotoPathAtual,
       recusada:    _recusar,
     );
+
+    // Se o usuário tirou uma foto nova, envia o arquivo ao servidor em background
+    // (best-effort — o caminho local já ficou salvo na coleta).
+    if (_fotoNova != null) {
+      provider.uploadFotoColeta(widget.coleta.id, _fotoNova!.path);
+    }
 
     if (mounted) {
       Navigator.of(context).pop();

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
 
@@ -151,6 +152,14 @@ class ColetaProvider extends ChangeNotifier {
   SyncStatus _syncStatus = SyncStatus.idle;
   SyncStatus get syncStatus => _syncStatus;
 
+  // Itens registrados localmente aguardando envio ao servidor (pending_sync = 1).
+  int _pendingCount = 0;
+  int get pendingCount => _pendingCount;
+
+  // Fotos ainda só no device, aguardando upload.
+  int _pendingFotos = 0;
+  int get pendingFotos => _pendingFotos;
+
   Timer? _pollingTimer;
 
   final List<Resfriador>   _resfriadores  = [];
@@ -180,10 +189,13 @@ class ColetaProvider extends ChangeNotifier {
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    _connSub?.cancel();
     super.dispose();
   }
 
   bool _flushing = false;
+  StreamSubscription<ConnectivityResult>? _connSub;
+  bool _online = true;
 
   Future<void> _init() async {
     _syncStatus = SyncStatus.syncing;
@@ -199,22 +211,36 @@ class ColetaProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
-    // Polling a cada 2 minutos: envia pendentes e atualiza rotas alteradas pelo ERP
-    _pollingTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
-      await flushPending();
-      final synced = await ApiService.syncAll();
-      if (synced) {
-        _syncStatus = SyncStatus.ok;
-        _resfriadores.clear();
-        _produtores.clear();
-        _veiculos.clear();
-        _motoristas.clear();
-        _colaboradores.clear();
-        _rotas.clear();
-        await _loadFromDatabase();
-        notifyListeners();
-      }
+    // Polling a cada 2 minutos como rede de segurança (só dados operacionais).
+    _pollingTimer = Timer.periodic(const Duration(minutes: 2), (_) => _syncCycle());
+
+    // Ao reconectar, faz um ciclo COMPLETO (cadastros + rotas) para pôr tudo em dia.
+    _connSub = Connectivity().onConnectivityChanged.listen((result) {
+      final agoraOnline = result != ConnectivityResult.none;
+      final voltou = agoraOnline && !_online;
+      _online = agoraOnline;
+      if (voltou) _syncCycle(full: true);
     });
+  }
+
+  /// Um ciclo de sincronização: envia pendências e rebaixa os dados do ERP.
+  /// [full] = também rebaixa os cadastros; senão, só rotas/detalhes (cache leve).
+  /// Reentrância protegida via [_flushing] no flushPending.
+  Future<void> _syncCycle({bool full = false}) async {
+    await flushPending();
+    final synced =
+        full ? await ApiService.syncAll() : await ApiService.syncOperacional();
+    if (synced) {
+      _syncStatus = SyncStatus.ok;
+      _resfriadores.clear();
+      _produtores.clear();
+      _veiculos.clear();
+      _motoristas.clear();
+      _colaboradores.clear();
+      _rotas.clear();
+      await _loadFromDatabase();
+      notifyListeners();
+    }
   }
 
   /// Envia ao servidor todas as coletas/rotas registradas localmente e ainda
@@ -235,19 +261,77 @@ class ColetaProvider extends ChangeNotifier {
         if (ok) await DatabaseService.markRotaSynced(r['id'] as int);
       }
       for (final d in await DatabaseService.getPendingDetalhes()) {
-        final ok = await ApiService.pushColetaDetalhe(d['id'] as int, {
+        final id = d['id'] as int;
+        var fotoCaminho = d['foto_caminho'] as String?;
+
+        // Foto tirada offline ainda em caminho local do device → tenta subir o
+        // arquivo agora. Caminho do servidor começa com 'uploads/'.
+        if (fotoCaminho != null &&
+            fotoCaminho.isNotEmpty &&
+            !fotoCaminho.startsWith('uploads/')) {
+          final serverPath = await ApiService.uploadFotoColeta(id, fotoCaminho);
+          if (serverPath != null) {
+            fotoCaminho = serverPath;
+            await DatabaseService.updateColetaDetalhe(id, {'foto_caminho': serverPath});
+            _setFotoEmMemoria(id, serverPath);
+          }
+        }
+
+        final ok = await ApiService.pushColetaDetalhe(id, {
           'volume_coletado_litros': d['volume_coletado_litros'],
           'temperatura_leite_c': d['temperatura_leite_c'],
           'observacao': d['observacao'],
           'motivo_adiamento': d['motivo_adiamento'],
-          'foto_caminho': d['foto_caminho'],
+          'foto_caminho': fotoCaminho,
           'data_hora_registro': d['data_hora_registro'],
           'status': d['status'],
         });
-        if (ok) await DatabaseService.markDetalheSynced(d['id'] as int);
+        if (ok) await DatabaseService.markDetalheSynced(id);
+      }
+
+      // Retenta fotos que ficaram só no device (ex.: detalhe já sincronizado
+      // mas o upload da foto falhou/foi rejeitado antes). Roda depois do laço
+      // acima, então só pega as que ainda estão locais.
+      for (final d in await DatabaseService.getDetalhesComFotoLocal()) {
+        final id = d['id'] as int;
+        final local = d['foto_caminho'] as String;
+        final serverPath = await ApiService.uploadFotoColeta(id, local);
+        if (serverPath != null) {
+          await DatabaseService.updateColetaDetalhe(id, {'foto_caminho': serverPath});
+          _setFotoEmMemoria(id, serverPath);
+          await ApiService.pushColetaDetalhe(id, {'foto_caminho': serverPath});
+        }
       }
     } finally {
       _flushing = false;
+      _pendingCount = await DatabaseService.countPending();
+      _pendingFotos = await DatabaseService.countPendingFotos();
+      notifyListeners();
+    }
+  }
+
+  /// Envia o arquivo de foto de uma coleta ao servidor (best-effort).
+  /// Em sucesso, troca o caminho local pelo caminho gerenciado do servidor
+  /// (em memória e no SQLite). Offline/erro: mantém o caminho local — o retry
+  /// acontece depois no flushPending.
+  Future<void> uploadFotoColeta(int coletaId, String localPath) async {
+    final serverPath = await ApiService.uploadFotoColeta(coletaId, localPath);
+    if (serverPath == null) return;
+
+    await DatabaseService.updateColetaDetalhe(coletaId, {'foto_caminho': serverPath});
+    _setFotoEmMemoria(coletaId, serverPath);
+  }
+
+  /// Atualiza o caminho da foto no modelo em memória e notifica a UI.
+  void _setFotoEmMemoria(int coletaId, String caminho) {
+    for (final r in _rotas) {
+      for (final c in r.coletas) {
+        if (c.id == coletaId) {
+          c.fotoCaminho = caminho;
+          notifyListeners();
+          return;
+        }
+      }
     }
   }
 
@@ -424,15 +508,6 @@ class ColetaProvider extends ChangeNotifier {
       case 'EM_ANDAMENTO': return RotaStatus.emAndamento;
       case 'CONCLUIDA':    return RotaStatus.finalizada;
       default:             return RotaStatus.pendente;
-    }
-  }
-
-  static String _rotaStatusStr(RotaStatus s) {
-    switch (s) {
-      case RotaStatus.liberada:     return 'LIBERADA';
-      case RotaStatus.emAndamento:  return 'EM_ANDAMENTO';
-      case RotaStatus.finalizada:   return 'CONCLUIDA';
-      default:                      return 'PENDENTE';
     }
   }
 

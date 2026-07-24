@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'server_config.dart';
@@ -154,18 +155,41 @@ class ApiService {
 
   /// Baixa todos os cadastros e rotas do servidor e grava no SQLite local.
   /// Retorna true se a sincronia foi bem-sucedida.
+  /// Baixa TUDO (cadastros + rotas). Usar no login, refresh manual e ao
+  /// reconectar após período offline.
   static Future<bool> syncAll() async {
     try {
-      await Future.wait([
-        _syncResfriadores(),
-        _syncProdutores(),
-        _syncVeiculos(),
-        _syncMotoristas(),
-        _syncColaboradores(),
-      ]);
+      await _syncCadastros();
       await _syncRotas();
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[ApiService.syncAll] Falha na sincronização: $e');
+      debugPrint('$st');
+      return false;
+    }
+  }
+
+  /// Cadastros base (mudam raramente) — resfriadores, produtores, veículos,
+  /// motoristas, colaboradores.
+  static Future<void> _syncCadastros() async {
+    await Future.wait([
+      _syncResfriadores(),
+      _syncProdutores(),
+      _syncVeiculos(),
+      _syncMotoristas(),
+      _syncColaboradores(),
+    ]);
+  }
+
+  /// Só os dados operacionais (rotas + detalhes), que mudam durante o turno.
+  /// Usar no polling periódico para não re-baixar cadastros à toa (cache leve).
+  static Future<bool> syncOperacional() async {
+    try {
+      await _syncRotas(soAtivas: true);
+      return true;
+    } catch (e, st) {
+      debugPrint('[ApiService.syncOperacional] Falha: $e');
+      debugPrint('$st');
       return false;
     }
   }
@@ -192,7 +216,10 @@ class ApiService {
 
   static Future<void> _syncResfriadores() async {
     final res = await _get('/coleta/resfriadores');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -210,7 +237,10 @@ class ApiService {
 
   static Future<void> _syncProdutores() async {
     final res = await _get('/coleta/produtores');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -231,7 +261,10 @@ class ApiService {
 
   static Future<void> _syncVeiculos() async {
     final res = await _get('/coleta/veiculos');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -248,7 +281,10 @@ class ApiService {
 
   static Future<void> _syncMotoristas() async {
     final res = await _get('/coleta/motoristas');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -265,7 +301,10 @@ class ApiService {
 
   static Future<void> _syncColaboradores() async {
     final res = await _get('/coleta/colaboradores');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
@@ -280,13 +319,21 @@ class ApiService {
     }
   }
 
-  static Future<void> _syncRotas() async {
+  /// Baixa as rotas e, para cada uma, suas paradas/detalhes.
+  /// [soAtivas] = pula o download de detalhes de rotas já CONCLUÍDAS (que não
+  /// mudam mais) — evita o custo N+1 no ciclo periódico. No sync completo
+  /// (login/refresh/reconexão) baixa tudo, inclusive o histórico concluído.
+  static Future<void> _syncRotas({bool soAtivas = false}) async {
     final res = await _get('/coleta/rotas');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;
       final rotaId = m['id'] as int;
+      final status = m['status'] ?? 'PENDENTE';
 
       await DatabaseService.upsertColetaRota({
         'id': rotaId,
@@ -296,16 +343,21 @@ class ApiService {
         'data_coleta': m['data_coleta'] ?? '',
         'data_hora_inicio': m['data_hora_inicio'],
         'data_hora_fim': m['data_hora_fim'],
-        'status': m['status'] ?? 'PENDENTE',
+        'status': status,
       });
 
+      // Rota concluída não muda mais — no ciclo leve, não re-baixa os detalhes.
+      if (soAtivas && status == 'CONCLUIDA') continue;
       await _syncDetalhesRota(rotaId);
     }
   }
 
   static Future<void> _syncDetalhesRota(int rotaId) async {
     final res = await _get('/coleta/rotas/$rotaId/detalhes');
-    if (res.statusCode != 200) return;
+    if (res.statusCode != 200) {
+      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      return;
+    }
     final list = _extractList(res.body);
     for (final item in list) {
       final m = item as Map<String, dynamic>;

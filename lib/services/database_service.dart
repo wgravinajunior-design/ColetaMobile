@@ -298,6 +298,24 @@ class DatabaseService {
     return d + r;
   }
 
+  // Uma foto é "local" (ainda não enviada) quando não começa com 'uploads/'
+  // (o servidor devolve caminhos como 'uploads/paradas/...').
+  static const String _whereFotoLocal =
+      "foto_caminho IS NOT NULL AND foto_caminho <> '' AND foto_caminho NOT LIKE 'uploads/%'";
+
+  /// Coletas cuja foto ainda está só no device (upload pendente).
+  static Future<List<Map<String, dynamic>>> getDetalhesComFotoLocal() async =>
+      (await database).query('coletas_detalhe',
+          columns: ['id', 'foto_caminho'], where: _whereFotoLocal);
+
+  /// Quantidade de fotos aguardando upload.
+  static Future<int> countPendingFotos() async {
+    final db = await database;
+    return Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM coletas_detalhe WHERE $_whereFotoLocal')) ??
+        0;
+  }
+
   static Future<List<Map<String, dynamic>>> getColetasDetalheComJoin(int idColetaRota) async =>
       (await database).rawQuery('''
         SELECT cd.*,

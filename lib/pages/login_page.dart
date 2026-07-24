@@ -319,7 +319,7 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Informe o IP e a porta do servidor Delphi/Horse na rede local.',
+              'Informe o IP e a porta do servidor da retaguarda na rede local.',
               style: TextStyle(color: AppColors.textLight, fontSize: 13),
             ),
             const SizedBox(height: 20),
