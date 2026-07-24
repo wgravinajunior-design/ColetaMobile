@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Precisa estar AQUI, e nao so no manifesto de debug: o Android nao faz
+         merge de src/debug nem de src/profile no APK de release. Sem isto o app
+         instalado fica sem rede e todo acesso a retaguarda falha na hora com
+         SocketException ("nao foi possivel conectar"), qualquer que seja o IP. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -7,7 +13,8 @@
     <application
         android:label="GoUpColeta 1.2"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
