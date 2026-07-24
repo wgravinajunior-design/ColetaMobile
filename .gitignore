@@ -43,3 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ── Repositorio publico ──────────────────────────────────────────────────
+# Instaladores/APK vao como asset de Release do GitHub, nunca versionados:
+# cada build pesa dezenas de MB e incharia o clone permanentemente.
+installer/dist/
+*.apk
+*.aab
+*.msi
+
+# Configuracao e segredos da instalacao local
+conf.ini
+jwt.secret
+*.db
