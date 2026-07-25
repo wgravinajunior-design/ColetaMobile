@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Versão do app. Mantenha em sincronia com o `version:` do pubspec.yaml ao
 /// publicar uma release — é o número comparado com a última tag do GitHub.
-const String appVersao = '1.5.0';
+const String appVersao = '1.6.0';
 
 /// Repositório público de onde saem as atualizações.
 const String repoAtualizacao = 'wgravinajunior-design/ColetaMobile';

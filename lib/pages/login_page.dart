@@ -38,7 +38,10 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
       final user = await ApiService.login(
         _usernameController.text.trim(),
@@ -47,9 +50,7 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       final perfil = (user['perfil'] as String?) ?? 'OPERADOR';
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => HomePage(userRole: perfil),
-        ),
+        MaterialPageRoute(builder: (context) => HomePage(userRole: perfil)),
       );
     } on Exception catch (e) {
       if (mounted) {
@@ -126,20 +127,32 @@ class _LoginPageState extends State<LoginPage> {
                           // Mensagem de erro
                           if (_errorMessage != null) ...[
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.error.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                                border: Border.all(
+                                  color: AppColors.error.withValues(alpha: 0.4),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                                  const Icon(
+                                    Icons.error_outline,
+                                    color: AppColors.error,
+                                    size: 18,
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       _errorMessage!,
-                                      style: const TextStyle(color: AppColors.error, fontSize: 13),
+                                      style: const TextStyle(
+                                        color: AppColors.error,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -174,8 +187,9 @@ class _LoginPageState extends State<LoginPage> {
                                       ? Icons.visibility_outlined
                                       : Icons.visibility_off_outlined,
                                 ),
-                                onPressed: () => setState(() =>
-                                    _obscurePassword = !_obscurePassword),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
                               ),
                             ),
                             validator: (v) => (v == null || v.trim().isEmpty)
@@ -203,8 +217,7 @@ class _LoginPageState extends State<LoginPage> {
                           // Botão Configuração
                           OutlinedButton.icon(
                             onPressed: _abrirConfiguracoes,
-                            icon: const Icon(Icons.settings_outlined,
-                                size: 18),
+                            icon: const Icon(Icons.settings_outlined, size: 18),
                             label: const Text('Configuração do Servidor'),
                           ),
                         ],
@@ -232,10 +245,10 @@ class _ConfiguracaoDialog extends StatefulWidget {
 }
 
 class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
-  final _ipController    = TextEditingController();
+  final _ipController = TextEditingController();
   final _portaController = TextEditingController();
-  bool _testando  = false;
-  bool _salvando  = false;
+  bool _testando = false;
+  bool _salvando = false;
   String? _statusTeste;
 
   @override
@@ -245,7 +258,7 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
   }
 
   Future<void> _carregarConfig() async {
-    _ipController.text    = await ServerConfig.getIp();
+    _ipController.text = await ServerConfig.getIp();
     _portaController.text = await ServerConfig.getPorta();
     if (mounted) setState(() {});
   }
@@ -257,19 +270,33 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
     super.dispose();
   }
 
+  /// Endereço com domínio ou porta embutida dispensa o campo de porta.
+  bool get _semPorta => ServerConfig.portaDispensavel(_ipController.text);
+
+  /// URL que será realmente chamada, mostrada abaixo dos campos.
+  String get _urlPrevia =>
+      ServerConfig.montarUrl(_ipController.text, _portaController.text);
+
   Future<void> _testar() async {
-    final ip    = _ipController.text.trim();
+    final ip = _ipController.text.trim();
     final porta = _portaController.text.trim();
-    if (ip.isEmpty || porta.isEmpty) return;
-    setState(() { _testando = true; _statusTeste = null; });
+    if (ip.isEmpty) return;
+    setState(() {
+      _testando = true;
+      _statusTeste = null;
+    });
     final erro = await ServerConfig.testarConexao(ip, porta);
-    if (mounted) setState(() { _testando = false; _statusTeste = erro ?? ''; });
+    if (mounted)
+      setState(() {
+        _testando = false;
+        _statusTeste = erro ?? '';
+      });
   }
 
   Future<void> _salvar() async {
-    final ip    = _ipController.text.trim();
+    final ip = _ipController.text.trim();
     final porta = _portaController.text.trim();
-    if (ip.isEmpty || porta.isEmpty) return;
+    if (ip.isEmpty) return;
     setState(() => _salvando = true);
     await ServerConfig.salvar(ip, porta);
     if (mounted) {
@@ -299,7 +326,11 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
               color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.dns_rounded, color: AppColors.primary, size: 22),
+            child: const Icon(
+              Icons.dns_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           const Text(
@@ -326,34 +357,61 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
 
             TextField(
               controller: _ipController,
-              keyboardType: TextInputType.number,
+              // Teclado de URL: precisa de letras e ponto para o domínio.
+              keyboardType: TextInputType.url,
+              autocorrect: false,
               decoration: const InputDecoration(
-                labelText: 'Endereço IP',
-                hintText: '192.168.1.100',
-                prefixIcon: Icon(Icons.computer_outlined),
+                labelText: 'Endereço do servidor',
+                hintText: '192.168.1.100  ou  coleta.goupsistemas.uk',
+                prefixIcon: Icon(Icons.dns_outlined),
               ),
               onChanged: (_) => setState(() => _statusTeste = null),
             ),
-            const SizedBox(height: 14),
 
-            TextField(
-              controller: _portaController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Porta',
-                hintText: '8080',
-                prefixIcon: Icon(Icons.settings_ethernet),
+            // Domínio implica túnel, que atende na porta padrão do HTTPS —
+            // manter o campo só confundiria.
+            if (!_semPorta) ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _portaController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Porta',
+                  hintText: '8080',
+                  prefixIcon: Icon(Icons.settings_ethernet),
+                ),
+                onChanged: (_) => setState(() => _statusTeste = null),
               ),
-              onChanged: (_) => setState(() => _statusTeste = null),
+            ],
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                const Icon(Icons.link, size: 14, color: AppColors.textLight),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _urlPrevia.isEmpty
+                        ? 'Informe o endereço acima'
+                        : _urlPrevia,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             OutlinedButton.icon(
               onPressed: _testando ? null : _testar,
               icon: _testando
                   ? const SizedBox(
-                      height: 16, width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.wifi_tethering, size: 18),
               label: Text(_testando ? 'Testando...' : 'Testar Conexão'),
             ),
@@ -361,7 +419,10 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
             if (_statusTeste != null) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: sucesso
                       ? AppColors.success.withValues(alpha: 0.08)
@@ -402,16 +463,22 @@ class _ConfiguracaoDialogState extends State<_ConfiguracaoDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar',
-              style: TextStyle(color: AppColors.textLight)),
+          child: const Text(
+            'Cancelar',
+            style: TextStyle(color: AppColors.textLight),
+          ),
         ),
         ElevatedButton.icon(
           onPressed: _salvando ? null : _salvar,
           icon: _salvando
               ? const SizedBox(
-                  height: 16, width: 16,
+                  height: 16,
+                  width: 16,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
               : const Icon(Icons.save, size: 18),
           label: const Text('Salvar'),
         ),

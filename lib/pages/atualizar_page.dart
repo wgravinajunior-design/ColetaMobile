@@ -36,13 +36,16 @@ class _AtualizarPageState extends State<AtualizarPage> {
 
   final List<_SyncItem> _itens = [
     _SyncItem(label: 'Envio de Coletas Pendentes', icon: Icons.upload_outlined),
-    _SyncItem(label: 'Produtores',                  icon: Icons.person_pin_outlined),
-    _SyncItem(label: 'Veículos',                    icon: Icons.local_shipping_outlined),
-    _SyncItem(label: 'Motoristas',                  icon: Icons.drive_eta_outlined),
-    _SyncItem(label: 'Resfriadores',                icon: Icons.ac_unit_outlined),
-    _SyncItem(label: 'Colaboradores',               icon: Icons.badge_outlined),
-    _SyncItem(label: 'Definição de Rotas',          icon: Icons.alt_route_outlined),
-    _SyncItem(label: 'Programação de Coletas',      icon: Icons.calendar_month_outlined),
+    _SyncItem(label: 'Produtores', icon: Icons.person_pin_outlined),
+    _SyncItem(label: 'Veículos', icon: Icons.local_shipping_outlined),
+    _SyncItem(label: 'Motoristas', icon: Icons.drive_eta_outlined),
+    _SyncItem(label: 'Resfriadores', icon: Icons.ac_unit_outlined),
+    _SyncItem(label: 'Colaboradores', icon: Icons.badge_outlined),
+    _SyncItem(label: 'Definição de Rotas', icon: Icons.alt_route_outlined),
+    _SyncItem(
+      label: 'Programação de Coletas',
+      icon: Icons.calendar_month_outlined,
+    ),
   ];
 
   Future<void> _iniciarAtualizacao() async {
@@ -55,11 +58,11 @@ class _AtualizarPageState extends State<AtualizarPage> {
       }
     });
 
-    final ip    = await ServerConfig.getIp();
+    final endereco = await ServerConfig.getEndereco();
     final porta = await ServerConfig.getPorta();
 
     // Verifica conexão antes de começar
-    final erroConexao = await ServerConfig.testarConexao(ip, porta);
+    final erroConexao = await ServerConfig.testarConexao(endereco, porta);
     if (erroConexao != null) {
       if (mounted) {
         setState(() {
@@ -119,9 +122,11 @@ class _AtualizarPageState extends State<AtualizarPage> {
       final algumErro = _itens.any((i) => i.status == _SyncStatus.erro);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(algumErro
-              ? 'Alguns itens falharam. Verifique a conexão.'
-              : 'Atualização concluída!'),
+          content: Text(
+            algumErro
+                ? 'Alguns itens falharam. Verifique a conexão.'
+                : 'Atualização concluída!',
+          ),
           backgroundColor: algumErro ? AppColors.error : AppColors.success,
         ),
       );
@@ -175,10 +180,7 @@ class _AtualizarPageState extends State<AtualizarPage> {
                       value: 'Apenas Modificados',
                       child: Text('Apenas Modificados'),
                     ),
-                    DropdownMenuItem(
-                      value: 'Tudo',
-                      child: Text('Tudo'),
-                    ),
+                    DropdownMenuItem(value: 'Tudo', child: Text('Tudo')),
                   ],
                   onChanged: _sincronizando
                       ? null
@@ -194,7 +196,9 @@ class _AtualizarPageState extends State<AtualizarPage> {
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.sync_rounded, size: 20),
                   label: Text(_sincronizando ? 'Atualizando...' : 'Atualizar'),
@@ -235,19 +239,27 @@ class _SyncItemTile extends StatelessWidget {
 
   Color get _statusColor {
     switch (item.status) {
-      case _SyncStatus.concluido:    return AppColors.success;
-      case _SyncStatus.sincronizando: return AppColors.primary;
-      case _SyncStatus.erro:          return AppColors.error;
-      case _SyncStatus.aguardando:    return AppColors.textLight;
+      case _SyncStatus.concluido:
+        return AppColors.success;
+      case _SyncStatus.sincronizando:
+        return AppColors.primary;
+      case _SyncStatus.erro:
+        return AppColors.error;
+      case _SyncStatus.aguardando:
+        return AppColors.textLight;
     }
   }
 
   IconData get _statusIcon {
     switch (item.status) {
-      case _SyncStatus.concluido:    return Icons.check_circle_rounded;
-      case _SyncStatus.sincronizando: return Icons.sync_rounded;
-      case _SyncStatus.erro:          return Icons.error_rounded;
-      case _SyncStatus.aguardando:    return Icons.radio_button_unchecked;
+      case _SyncStatus.concluido:
+        return Icons.check_circle_rounded;
+      case _SyncStatus.sincronizando:
+        return Icons.sync_rounded;
+      case _SyncStatus.erro:
+        return Icons.error_rounded;
+      case _SyncStatus.aguardando:
+        return Icons.radio_button_unchecked;
     }
   }
 

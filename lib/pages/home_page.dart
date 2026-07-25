@@ -328,26 +328,34 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
     super.dispose();
   }
 
+  /// Endereço com domínio ou porta embutida dispensa o campo de porta.
+  bool get _semPorta => ServerConfig.portaDispensavel(_ipCtrl.text);
+
+  /// URL que será realmente chamada, mostrada abaixo dos campos.
+  String get _urlPrevia =>
+      ServerConfig.montarUrl(_ipCtrl.text, _portaCtrl.text);
+
   Future<void> _testar() async {
     final ip = _ipCtrl.text.trim();
     final porta = _portaCtrl.text.trim();
-    if (ip.isEmpty || porta.isEmpty) return;
+    if (ip.isEmpty) return;
     setState(() {
       _testando = true;
       _statusTeste = null;
     });
     final erro = await ServerConfig.testarConexao(ip, porta);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _testando = false;
         _statusTeste = erro ?? '';
       });
+    }
   }
 
   Future<void> _salvar() async {
     final ip = _ipCtrl.text.trim();
     final porta = _portaCtrl.text.trim();
-    if (ip.isEmpty || porta.isEmpty) return;
+    if (ip.isEmpty) return;
     setState(() => _salvando = true);
     await ServerConfig.salvar(ip, porta);
     if (mounted) {
@@ -400,32 +408,57 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Informe o IP e a porta do servidor da retaguarda na rede local.',
+              'Informe o IP da retaguarda na rede local, ou o endereço do '
+              'túnel para acessar de fora.',
               style: TextStyle(color: AppColors.textLight, fontSize: 13),
             ),
             const SizedBox(height: 20),
             TextField(
               controller: _ipCtrl,
-              keyboardType: TextInputType.number,
+              // Teclado de URL: precisa de letras, ponto e barra para o domínio.
+              keyboardType: TextInputType.url,
+              autocorrect: false,
               decoration: const InputDecoration(
-                labelText: 'Endereço IP',
-                hintText: '192.168.1.100',
-                prefixIcon: Icon(Icons.computer_outlined),
+                labelText: 'Endereço do servidor',
+                hintText: '192.168.1.100  ou  coleta.goupsistemas.uk',
+                prefixIcon: Icon(Icons.dns_outlined),
               ),
               onChanged: (_) => setState(() => _statusTeste = null),
             ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _portaCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Porta',
-                hintText: '8080',
-                prefixIcon: Icon(Icons.settings_ethernet),
+            // Domínio implica túnel, que atende na porta padrão do HTTPS —
+            // manter o campo só confundiria.
+            if (!_semPorta) ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _portaCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Porta',
+                  hintText: '8080',
+                  prefixIcon: Icon(Icons.settings_ethernet),
+                ),
+                onChanged: (_) => setState(() => _statusTeste = null),
               ),
-              onChanged: (_) => setState(() => _statusTeste = null),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.link, size: 14, color: AppColors.textLight),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _urlPrevia.isEmpty
+                        ? 'Informe o endereço acima'
+                        : _urlPrevia,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _testando ? null : _testar,
               icon: _testando
