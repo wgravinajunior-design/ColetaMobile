@@ -1,11 +1,39 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Versão do app. Mantenha em sincronia com o `version:` do pubspec.yaml ao
-/// publicar uma release — é o número comparado com a última tag do GitHub.
-const String appVersao = '1.8.0';
+/// Versão em execução, lida do próprio pacote.
+///
+/// Antes era uma constante mantida à mão em paralelo ao `version:` do
+/// `pubspec.yaml`. Bastava esquecer de sincronizar para o app comparar a
+/// versão errada com a última tag do GitHub — deixando de oferecer uma
+/// atualização que existe, ou oferecendo uma que já está instalada.
+class AppInfo {
+  const AppInfo._();
+
+  /// Vale até [carregar] terminar; a interface só consulta depois disso.
+  static String _versao = '0.0.0';
+
+  static String get versao => _versao;
+
+  /// Lê a versão do bundle. Chamada uma vez no arranque.
+  static Future<void> carregar() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      // Descarta um eventual sufixo de build ("1.9.0+12"): ele não entra na
+      // comparação com a tag do GitHub nem na exibição.
+      final limpa = info.version.split('+').first.trim();
+      if (limpa.isNotEmpty) _versao = limpa;
+    } catch (e) {
+      debugPrint('[AppInfo] não foi possível ler a versão do pacote: $e');
+    }
+  }
+}
+
+/// Atalho usado pela interface e pelo verificador de atualização.
+String get appVersao => AppInfo.versao;
 
 /// Repositório público de onde saem as atualizações.
 const String repoAtualizacao = 'wgravinajunior-design/ColetaMobile';

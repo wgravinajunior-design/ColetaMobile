@@ -4,6 +4,7 @@ import '../main.dart' show AppColors;
 import '../providers/coleta_provider.dart';
 import '../services/server_config.dart';
 import '../services/api_service.dart';
+import '../services/perfil.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialogs.dart';
 import 'tabs/cadastros_tab.dart';
@@ -26,7 +27,10 @@ class _HomePageState extends State<HomePage> {
   /// Só uma vez por execução, mesmo que a Home seja reconstruída.
   static bool _jaVerificouAtualizacao = false;
 
-  bool get _isMotorista => widget.userRole.toUpperCase() == 'MOTORISTA';
+  bool get _isMotorista => Perfil.ehMotorista(widget.userRole);
+
+  /// Cadastrar pelo celular é exclusivo do administrador.
+  bool get _isAdmin => Perfil.ehAdministrador(widget.userRole);
 
   @override
   void initState() {
@@ -65,13 +69,34 @@ class _HomePageState extends State<HomePage> {
     await DialogoAtualizacao.mostrar(context, nova);
   }
 
-  List<Widget> get _tabs => _isMotorista
-      ? [MovimentacoesTab(userRole: widget.userRole)]
-      : [
-          MovimentacoesTab(userRole: widget.userRole),
-          CadastrosTab(userRole: widget.userRole),
-          DashboardTab(userRole: widget.userRole),
-        ];
+  /// Abas visíveis para o perfil. Cadastros só existe para o administrador —
+  /// não basta desabilitar os botões: a aba inteira sai do caminho.
+  List<Widget> get _tabs => [
+    MovimentacoesTab(userRole: widget.userRole),
+    if (_isAdmin) CadastrosTab(userRole: widget.userRole),
+    if (!_isMotorista) DashboardTab(userRole: widget.userRole),
+  ];
+
+  /// Itens da barra inferior, na mesma ordem de [_tabs].
+  List<BottomNavigationBarItem> get _itensNavegacao => [
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.local_shipping_outlined),
+      activeIcon: Icon(Icons.local_shipping),
+      label: 'Movimentações',
+    ),
+    if (_isAdmin)
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.app_registration_outlined),
+        activeIcon: Icon(Icons.app_registration),
+        label: 'Cadastros',
+      ),
+    if (!_isMotorista)
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.dashboard_outlined),
+        activeIcon: Icon(Icons.dashboard),
+        label: 'Dashboard',
+      ),
+  ];
 
   void _handleLogout() {
     showDialog(
@@ -210,35 +235,20 @@ class _HomePageState extends State<HomePage> {
                 children: tabs,
               ),
             ),
-            if (_isMotorista) const _RodapeVersao(),
+            if (tabs.length < 2) const _RodapeVersao(),
           ],
         ),
       ),
-      bottomNavigationBar: _isMotorista
+      // Com uma aba só não há o que navegar — a barra vira ruído.
+      bottomNavigationBar: tabs.length < 2
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 BottomNavigationBar(
-                  currentIndex: _currentIndex,
+                  currentIndex: _currentIndex.clamp(0, tabs.length - 1),
                   onTap: (i) => setState(() => _currentIndex = i),
-                  items: const [
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.local_shipping_outlined),
-                      activeIcon: Icon(Icons.local_shipping),
-                      label: 'Movimentações',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.app_registration_outlined),
-                      activeIcon: Icon(Icons.app_registration),
-                      label: 'Cadastros',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.dashboard_outlined),
-                      activeIcon: Icon(Icons.dashboard),
-                      label: 'Dashboard',
-                    ),
-                  ],
+                  items: _itensNavegacao,
                 ),
                 const _RodapeVersao(),
               ],

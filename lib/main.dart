@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'providers/coleta_provider.dart';
 import 'pages/login_page.dart';
 import 'services/api_service.dart';
+import 'services/update_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,9 @@ void main() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+  // Versão vem do próprio pacote; precisa estar pronta antes de qualquer tela
+  // mostrá-la ou o verificador de atualização compará-la.
+  await AppInfo.carregar();
   await ApiService.initialize();
   runApp(const MyApp());
 }
