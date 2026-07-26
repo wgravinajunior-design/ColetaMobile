@@ -25,9 +25,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  /// Só uma vez por execução, mesmo que a Home seja reconstruída.
-  static bool _jaVerificouAtualizacao = false;
-
   bool get _isMotorista => Perfil.ehMotorista(widget.userRole);
 
   /// Cadastrar pelo celular é exclusivo do administrador.
@@ -36,38 +33,15 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    // Só aqui o banco é aberto e sincronizado: antes do login não há por que
+    // tocar nele, e fazer isso no construtor do provider prendia a tela
+    // inicial em "carregando banco de dados".
+    //
+    // A checagem de versão saiu daqui para a tela de login: rodando só depois
+    // de autenticar, quem abria o app e parava no login nunca era avisado.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Só aqui o banco é aberto e sincronizado: antes do login não há por que
-      // tocar nele, e fazer isso no construtor do provider prendia a tela
-      // inicial em "carregando banco de dados".
       context.read<ColetaProvider>().iniciar();
-
-      if (!_jaVerificouAtualizacao) {
-        _jaVerificouAtualizacao = true;
-        _rodarAtualizacao();
-      }
     });
-  }
-
-  /// Mostra as novidades da versão recém instalada e depois avisa se há uma
-  /// versão mais nova. Nunca interrompe o uso: falha de rede é ignorada.
-  Future<void> _rodarAtualizacao() async {
-    final anterior = await UpdateService.versaoVista();
-    if (anterior == null) {
-      // Primeira execução: só registra, sem popup de novidades.
-      await UpdateService.marcarVersaoVista(appVersao);
-    } else if (anterior != appVersao) {
-      final notas = await UpdateService.notasDaVersaoAtual();
-      await UpdateService.marcarVersaoVista(appVersao);
-      if (mounted && notas != null && notas.trim().isNotEmpty) {
-        await DialogoNovidades.mostrar(context, notas);
-      }
-    }
-
-    if (!mounted) return;
-    final nova = await UpdateService.verificar();
-    if (!mounted || nova == null) return;
-    await DialogoAtualizacao.mostrar(context, nova);
   }
 
   /// Abas visíveis para o perfil. Cadastros só existe para o administrador —

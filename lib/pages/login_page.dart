@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../main.dart' show AppColors;
 import '../services/server_config.dart';
 import '../services/api_service.dart';
+import '../services/update_service.dart';
+import '../widgets/update_dialogs.dart';
 import 'home_page.dart';
 
 // ---------------------------------------------------------------------------
@@ -21,6 +23,40 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
+
+  /// Uma vez por execução, mesmo que a tela seja reconstruída ou o usuário
+  /// saia e volte ao login.
+  static bool _jaVerificouVersao = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_jaVerificouVersao) return;
+    _jaVerificouVersao = true;
+    // Na abertura do app, e não depois do login: quem está desatualizado
+    // precisa saber antes de começar a usar. Roda solto para não segurar a
+    // tela, e falha de rede é ignorada pelo próprio serviço.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verificarVersao());
+  }
+
+  Future<void> _verificarVersao() async {
+    final anterior = await UpdateService.versaoVista();
+    if (anterior == null) {
+      await UpdateService.marcarVersaoVista(appVersao);
+    } else if (anterior != appVersao) {
+      // Acabou de atualizar: mostra o que mudou antes de qualquer outra coisa.
+      final notas = await UpdateService.notasDaVersaoAtual();
+      await UpdateService.marcarVersaoVista(appVersao);
+      if (mounted && notas != null && notas.trim().isNotEmpty) {
+        await DialogoNovidades.mostrar(context, notas);
+      }
+    }
+
+    if (!mounted) return;
+    final nova = await UpdateService.verificar();
+    if (!mounted || nova == null) return;
+    await DialogoAtualizacao.mostrar(context, nova);
+  }
 
   @override
   void dispose() {
@@ -107,7 +143,18 @@ class _LoginPageState extends State<LoginPage> {
                   'Gestão e rastreabilidade de coletas',
                   style: TextStyle(fontSize: 13, color: AppColors.textLight),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 6),
+                // Versão instalada à vista: é o primeiro dado que se confere
+                // quando se desconfia de que a atualização não chegou.
+                Text(
+                  'Versão $appVersao',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textLight,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 22),
 
                 // Card do formulário
                 Card(
