@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/perfil.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialogs.dart';
+import '../widgets/barra_status_conexao.dart';
 import 'tabs/cadastros_tab.dart';
 import 'tabs/movimentacoes_tab.dart';
 import 'tabs/dashboard_tab.dart';
@@ -229,6 +230,7 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
+            const BarraStatusConexao(),
             Expanded(
               child: IndexedStack(
                 index: _currentIndex.clamp(0, tabs.length - 1),

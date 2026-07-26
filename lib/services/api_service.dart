@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'server_config.dart';
+import 'sessao_offline.dart';
 import 'database_service.dart';
 
 const _kTimeout = Duration(seconds: 10);
@@ -10,7 +11,9 @@ const _kTokenKey = 'auth_token';
 
 class UnauthorizedException implements Exception {
   final String message;
-  const UnauthorizedException([this.message = 'Sessão expirada. Faça login novamente.']);
+  const UnauthorizedException([
+    this.message = 'Sessão expirada. Faça login novamente.',
+  ]);
   @override
   String toString() => message;
 }
@@ -72,21 +75,29 @@ class ApiService {
     return res;
   }
 
-  static Future<http.Response> _put(String path, Map<String, dynamic> body) async {
+  static Future<http.Response> _put(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final base = await ServerConfig.baseUrl;
     final res = await http
-        .put(Uri.parse('$base$path'),
-            headers: _headers, body: jsonEncode(body))
+        .put(Uri.parse('$base$path'), headers: _headers, body: jsonEncode(body))
         .timeout(_kTimeout);
     _checkUnauthorized(res);
     return res;
   }
 
-  static Future<http.Response> _post(String path, Map<String, dynamic> body) async {
+  static Future<http.Response> _post(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final base = await ServerConfig.baseUrl;
     final res = await http
-        .post(Uri.parse('$base$path'),
-            headers: _headers, body: jsonEncode(body))
+        .post(
+          Uri.parse('$base$path'),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
         .timeout(_kTimeout);
     _checkUnauthorized(res);
     return res;
@@ -112,7 +123,8 @@ class ApiService {
   static List _extractList(String body) {
     final decoded = jsonDecode(body);
     if (decoded is List) return decoded;
-    if (decoded is Map && decoded['data'] is List) return decoded['data'] as List;
+    if (decoded is Map && decoded['data'] is List)
+      return decoded['data'] as List;
     return const [];
   }
 
@@ -121,24 +133,63 @@ class ApiService {
   /// Autentica o usuário no servidor.
   /// Salva o Bearer token retornado em SharedPreferences.
   /// Retorna o Map com {id, nome, perfil, login, token} em caso de sucesso.
+  /// Autentica no servidor; sem rede, cai para a credencial guardada no
+  /// aparelho.
+  ///
+  /// O app roda em rota, onde o sinal cai e a retaguarda pode estar desligada.
+  /// Sem a alternativa offline o motorista ficava preso na tela de login mesmo
+  /// com todas as rotas já baixadas. Senha errada continua sendo recusada: o
+  /// cache só entra quando o servidor não responde, nunca quando ele responde
+  /// negando.
   static Future<Map<String, dynamic>> login(String login, String senha) async {
-    final base = await ServerConfig.baseUrl;
-    final res = await http
-        .post(
-          Uri.parse('$base/auth/login'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({'login': login, 'senha': senha}),
-        )
-        .timeout(_kTimeout);
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200) {
-      final token = data['token'] as String?;
-      if (token != null && token.isNotEmpty) {
-        await _saveToken(token);
+    try {
+      final base = await ServerConfig.baseUrl;
+      final res = await http
+          .post(
+            Uri.parse('$base/auth/login'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'login': login, 'senha': senha}),
+          )
+          .timeout(_kTimeout);
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200) {
+        final token = data['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          await _saveToken(token);
+        }
+        // Guarda para permitir entrar quando o servidor estiver fora.
+        await SessaoOffline.guardar(
+          login: login,
+          senha: senha,
+          perfil: (data['perfil'] as String?) ?? 'OPERADOR',
+          nome: (data['nome'] as String?) ?? login,
+        );
+        return data;
       }
-      return data;
+      // O servidor respondeu recusando: não é caso de cache.
+      throw _CredencialRecusada(
+        (data['error'] as String?) ?? 'Erro desconhecido (${res.statusCode})',
+      );
+    } on _CredencialRecusada catch (e) {
+      throw Exception(e.mensagem);
+    } catch (_) {
+      // Servidor inalcançável — tenta a credencial guardada.
+      final offline = await SessaoOffline.validar(login, senha);
+      if (offline != null) return offline;
+
+      final temCache = await SessaoOffline.disponivel;
+      throw Exception(
+        temCache
+            ? 'Sem conexão com a retaguarda, e a senha não confere com o '
+                  'último acesso feito neste aparelho.'
+            : 'Sem conexão com a retaguarda. É preciso entrar conectado ao '
+                  'menos uma vez neste aparelho antes de usar offline.',
+      );
     }
-    throw Exception(data['error'] ?? 'Erro desconhecido (${res.statusCode})');
   }
 
   /// Revoga o token no servidor e limpa o armazenamento local.
@@ -217,7 +268,9 @@ class ApiService {
   static Future<void> _syncResfriadores() async {
     final res = await _get('/coleta/resfriadores');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -228,7 +281,8 @@ class ApiService {
         'numero_identificador': m['numero_identificador'] ?? '',
         'marca_modelo': m['marca_modelo'] ?? '',
         'ano_fabricacao': m['ano_fabricacao'] ?? 0,
-        'capacidade_litros': (m['capacidade_litros'] as num?)?.toDouble() ?? 0.0,
+        'capacidade_litros':
+            (m['capacidade_litros'] as num?)?.toDouble() ?? 0.0,
         'ultima_manutencao': m['ultima_manutencao'],
         'status': m['status'] ?? 'ATIVO',
       });
@@ -238,7 +292,9 @@ class ApiService {
   static Future<void> _syncProdutores() async {
     final res = await _get('/coleta/produtores');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -250,9 +306,11 @@ class ApiService {
         'endereco': m['endereco'] ?? '',
         'latitude': (m['latitude'] as num?)?.toDouble() ?? 0.0,
         'longitude': (m['longitude'] as num?)?.toDouble() ?? 0.0,
-        'volume_medio_diario': (m['volume_medio_diario'] as num?)?.toDouble() ?? 0.0,
+        'volume_medio_diario':
+            (m['volume_medio_diario'] as num?)?.toDouble() ?? 0.0,
         'horario_coleta_previsto': m['horario_coleta_previsto'] ?? '',
-        'km_ate_tanque_principal': (m['km_ate_tanque_principal'] as num?)?.toDouble() ?? 0.0,
+        'km_ate_tanque_principal':
+            (m['km_ate_tanque_principal'] as num?)?.toDouble() ?? 0.0,
         'id_resfriador': m['id_resfriador'],
         'status': m['status'] ?? 'ATIVO',
       });
@@ -262,7 +320,9 @@ class ApiService {
   static Future<void> _syncVeiculos() async {
     final res = await _get('/coleta/veiculos');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -272,7 +332,8 @@ class ApiService {
         'id': m['id'],
         'descricao': m['descricao'] ?? '',
         'placa': m['placa'] ?? '',
-        'capacidade_litros': (m['capacidade_litros'] as num?)?.toDouble() ?? 0.0,
+        'capacidade_litros':
+            (m['capacidade_litros'] as num?)?.toDouble() ?? 0.0,
         'consumo_medio': (m['consumo_medio'] as num?)?.toDouble() ?? 0.0,
         'status': m['status'] ?? 'ATIVO',
       });
@@ -282,7 +343,9 @@ class ApiService {
   static Future<void> _syncMotoristas() async {
     final res = await _get('/coleta/motoristas');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -302,7 +365,9 @@ class ApiService {
   static Future<void> _syncColaboradores() async {
     final res = await _get('/coleta/colaboradores');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -326,7 +391,9 @@ class ApiService {
   static Future<void> _syncRotas({bool soAtivas = false}) async {
     final res = await _get('/coleta/rotas');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -355,7 +422,9 @@ class ApiService {
   static Future<void> _syncDetalhesRota(int rotaId) async {
     final res = await _get('/coleta/rotas/$rotaId/detalhes');
     if (res.statusCode != 200) {
-      debugPrint('[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}');
+      debugPrint(
+        '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+      );
       return;
     }
     final list = _extractList(res.body);
@@ -367,8 +436,10 @@ class ApiService {
         'id_produtor': m['id_produtor'] ?? 0,
         'ordem_visita': m['ordem_visita'] ?? 0,
         'data_hora_registro': m['data_hora_registro'],
-        'volume_coletado_litros': (m['volume_coletado_litros'] as num?)?.toDouble() ?? 0.0,
-        'temperatura_leite_c': (m['temperatura_leite_c'] as num?)?.toDouble() ?? 0.0,
+        'volume_coletado_litros':
+            (m['volume_coletado_litros'] as num?)?.toDouble() ?? 0.0,
+        'temperatura_leite_c':
+            (m['temperatura_leite_c'] as num?)?.toDouble() ?? 0.0,
         'observacao': m['observacao'] ?? '',
         'motivo_adiamento': m['motivo_adiamento'] ?? '',
         'status': m['status'] ?? 'PENDENTE',
@@ -418,14 +489,18 @@ class ApiService {
   /// Envia o arquivo de foto de uma coleta (multipart/form-data) ao servidor.
   /// Retorna o caminho gerenciado no servidor (uploads/paradas/...) em sucesso,
   /// ou null se offline/erro (nesse caso o caminho local é mantido).
-  static Future<String?> uploadFotoColeta(int coletaId, String localPath) async {
+  static Future<String?> uploadFotoColeta(
+    int coletaId,
+    String localPath,
+  ) async {
     try {
       final base = await ServerConfig.baseUrl;
       final req = http.MultipartRequest(
         'POST',
         Uri.parse('$base/coleta/detalhes/$coletaId/foto'),
       );
-      final headers = _headers..remove('Content-Type'); // multipart define sozinho
+      final headers = _headers
+        ..remove('Content-Type'); // multipart define sozinho
       req.headers.addAll(headers);
       req.files.add(await http.MultipartFile.fromPath('foto', localPath));
 
@@ -438,4 +513,11 @@ class ApiService {
       return null;
     }
   }
+}
+
+/// O servidor respondeu recusando a credencial — diferente de não responder.
+/// Só o segundo caso justifica cair para o cache offline.
+class _CredencialRecusada implements Exception {
+  const _CredencialRecusada(this.mensagem);
+  final String mensagem;
 }

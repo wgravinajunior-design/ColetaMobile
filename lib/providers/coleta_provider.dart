@@ -302,6 +302,19 @@ class ColetaProvider extends ChangeNotifier {
   /// Um ciclo de sincronização: envia pendências e rebaixa os dados do ERP.
   /// [full] = também rebaixa os cadastros; senão, só rotas/detalhes (cache leve).
   /// Reentrância protegida via [_flushing] no flushPending.
+  /// Ciclo completo pedido pelo usuário — o toque na faixa de status.
+  ///
+  /// Se o app entrou offline, o banco ainda não foi aberto: [iniciar] cuida
+  /// disso e já faz o primeiro ciclo.
+  Future<void> sincronizarAgora() async {
+    if (!_iniciado) return iniciar();
+    _syncStatus = SyncStatus.syncing;
+    notifyListeners();
+    await _syncCycle(full: true);
+    if (_syncStatus == SyncStatus.syncing) _syncStatus = SyncStatus.error;
+    notifyListeners();
+  }
+
   Future<void> _syncCycle({bool full = false}) async {
     await flushPending();
     final synced = full
