@@ -22,18 +22,18 @@ void main() async {
 }
 
 class AppColors {
-  static const primary      = Color(0xFF1565C0);
+  static const primary = Color(0xFF1565C0);
   static const primaryLight = Color(0xFF1E88E5);
-  static const secondary    = Color(0xFF00897B);
-  static const background   = Color(0xFFF0F4F8);
-  static const surface      = Color(0xFFFFFFFF);
-  static const cardBorder   = Color(0xFFDDE3EE);
-  static const textDark     = Color(0xFF1A2340);
-  static const textMedium   = Color(0xFF4A5568);
-  static const textLight    = Color(0xFF8A94A6);
-  static const success      = Color(0xFF2E7D32);
-  static const warning      = Color(0xFFE65100);
-  static const error        = Color(0xFFC62828);
+  static const secondary = Color(0xFF00897B);
+  static const background = Color(0xFFF0F4F8);
+  static const surface = Color(0xFFFFFFFF);
+  static const cardBorder = Color(0xFFDDE3EE);
+  static const textDark = Color(0xFF1A2340);
+  static const textMedium = Color(0xFF4A5568);
+  static const textLight = Color(0xFF8A94A6);
+  static const success = Color(0xFF2E7D32);
+  static const warning = Color(0xFFE65100);
+  static const error = Color(0xFFC62828);
 }
 
 class MyApp extends StatelessWidget {
@@ -42,9 +42,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ColetaProvider()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => ColetaProvider())],
       child: MaterialApp(
         title: 'ColetaLeite ERP',
         debugShowCheckedModeBanner: false,
@@ -54,9 +52,7 @@ class MyApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        supportedLocales: const [
-          Locale('pt', 'BR'),
-        ],
+        supportedLocales: const [Locale('pt', 'BR')],
         theme: ThemeData(
           useMaterial3: true,
           brightness: Brightness.light,
@@ -102,7 +98,10 @@ class MyApp extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12.0),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide: const BorderSide(
+                color: AppColors.primary,
+                width: 1.5,
+              ),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12.0),
@@ -118,11 +117,13 @@ class MyApp extends StatelessWidget {
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              padding:
-                  const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
               textStyle: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 15),
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
             ),
           ),
           outlinedButtonTheme: OutlinedButtonThemeData(
@@ -130,17 +131,19 @@ class MyApp extends StatelessWidget {
               foregroundColor: AppColors.primary,
               side: const BorderSide(color: AppColors.primary),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              padding:
-                  const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             ),
           ),
           bottomNavigationBarTheme: const BottomNavigationBarThemeData(
             backgroundColor: Colors.white,
             selectedItemColor: AppColors.primary,
             unselectedItemColor: AppColors.textLight,
-            selectedLabelStyle:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            selectedLabelStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
             unselectedLabelStyle: TextStyle(fontSize: 12),
             showUnselectedLabels: true,
             type: BottomNavigationBarType.fixed,
@@ -152,34 +155,27 @@ class MyApp extends StatelessWidget {
           ),
           textTheme: const TextTheme(
             headlineMedium: TextStyle(
-                color: AppColors.textDark, fontWeight: FontWeight.bold),
+              color: AppColors.textDark,
+              fontWeight: FontWeight.bold,
+            ),
             titleLarge: TextStyle(
-                color: AppColors.textDark, fontWeight: FontWeight.bold),
+              color: AppColors.textDark,
+              fontWeight: FontWeight.bold,
+            ),
             titleMedium: TextStyle(color: AppColors.textDark),
-            bodyLarge:   TextStyle(color: AppColors.textMedium),
-            bodyMedium:  TextStyle(color: AppColors.textMedium),
-            bodySmall:   TextStyle(color: AppColors.textLight),
+            bodyLarge: TextStyle(color: AppColors.textMedium),
+            bodyMedium: TextStyle(color: AppColors.textMedium),
+            bodySmall: TextStyle(color: AppColors.textLight),
           ),
         ),
-        home: Consumer<ColetaProvider>(
-          builder: (_, provider, __) {
-            if (provider.isLoading) {
-              return const Scaffold(
-                body: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Carregando banco de dados...'),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return const LoginPage();
-          },
-        ),
+        // Login direto, sem esperar nada.
+        //
+        // Aqui havia um Consumer que só liberava esta tela quando o provider
+        // terminava de carregar. Como o banco passou a ser aberto apenas
+        // depois de autenticar, isso virou um impasse: o login esperava uma
+        // carga que só aconteceria depois do login. A tela de entrada não
+        // depende de banco nem de rede — nada tem por que segurá-la.
+        home: const LoginPage(),
       ),
     );
   }

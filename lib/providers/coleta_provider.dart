@@ -200,7 +200,12 @@ class Rota {
 enum SyncStatus { idle, syncing, ok, error }
 
 class ColetaProvider extends ChangeNotifier {
-  bool _isLoading = true;
+  /// Verdadeiro só enquanto a carga inicial roda de fato.
+  ///
+  /// Começava em `true` antes de qualquer coisa ter começado, o que travou a
+  /// tela de login numa versão anterior: ela esperava esse sinal, e a carga só
+  /// vinha depois de autenticar. Nada de nascer "carregando" sem estar.
+  bool _isLoading = false;
   bool get isLoading => _isLoading;
 
   SyncStatus _syncStatus = SyncStatus.idle;
@@ -271,6 +276,7 @@ class ColetaProvider extends ChangeNotifier {
   }
 
   Future<void> _init() async {
+    _isLoading = true;
     _syncStatus = SyncStatus.syncing;
     notifyListeners();
 
