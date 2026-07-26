@@ -11,7 +11,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <application
-        android:label="GoUpColeta 1.2"
+        <!-- Sem numero de versao no rotulo: era ele que aparecia como "1.2" na
+             instalacao e no lancador, desatualizado a cada release. A versao
+             real ja vem do versionName, gerado a partir do pubspec. -->
+        android:label="GoUpColeta"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

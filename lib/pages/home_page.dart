@@ -31,10 +31,17 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    if (!_jaVerificouAtualizacao) {
-      _jaVerificouAtualizacao = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _rodarAtualizacao());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Só aqui o banco é aberto e sincronizado: antes do login não há por que
+      // tocar nele, e fazer isso no construtor do provider prendia a tela
+      // inicial em "carregando banco de dados".
+      context.read<ColetaProvider>().iniciar();
+
+      if (!_jaVerificouAtualizacao) {
+        _jaVerificouAtualizacao = true;
+        _rodarAtualizacao();
+      }
+    });
   }
 
   /// Mostra as novidades da versão recém instalada e depois avisa se há uma
@@ -252,17 +259,17 @@ class _RodapeVersao extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
+        children: [
           Text(
-            'Build 1.2',
-            style: TextStyle(
+            'Versão $appVersao',
+            style: const TextStyle(
               fontSize: 11,
               color: AppColors.textLight,
               fontWeight: FontWeight.w600,
             ),
           ),
-          SizedBox(height: 2),
-          Text(
+          const SizedBox(height: 2),
+          const Text(
             '─── Desenvolvido por Go Up Sistemas ───',
             style: TextStyle(fontSize: 10, color: AppColors.textLight),
           ),
@@ -523,10 +530,10 @@ class _ConfiguracaoHomeDialogState extends State<_ConfiguracaoHomeDialog> {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 4),
-            const Text(
-              'Build 1.2',
+            Text(
+              'Versão $appVersao',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 11,
                 color: AppColors.textLight,
                 fontWeight: FontWeight.w600,

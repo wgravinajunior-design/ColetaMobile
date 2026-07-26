@@ -63,23 +63,43 @@ class _MovimentacoesTabState extends State<MovimentacoesTab> {
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Row(children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
               ),
-              child: const Icon(Icons.local_shipping_rounded, color: AppColors.primary, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Rotas de Coleta',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-              Text('${visiveis.length} de ${provider.rotas.length} rota(s)',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
-            ]),
-          ]),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rotas de Coleta',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  Text(
+                    '${visiveis.length} de ${provider.rotas.length} rota(s)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         _buildFiltros(),
         const Divider(height: 1),
@@ -91,13 +111,20 @@ class _MovimentacoesTabState extends State<MovimentacoesTab> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.route_outlined, size: 56, color: AppColors.textLight),
+                      const Icon(
+                        Icons.route_outlined,
+                        size: 56,
+                        color: AppColors.textLight,
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         _data != null || _status != null
                             ? 'Nenhuma rota para este filtro.'
                             : 'Nenhuma rota disponível.',
-                        style: const TextStyle(color: AppColors.textLight, fontSize: 14),
+                        style: const TextStyle(
+                          color: AppColors.textLight,
+                          fontSize: 14,
+                        ),
                       ),
                       if (_data != null || _status != null) ...[
                         const SizedBox(height: 8),
@@ -158,7 +185,10 @@ class _MovimentacoesTabState extends State<MovimentacoesTab> {
               isExpanded: true,
               decoration: const InputDecoration(
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(),
               ),
               hint: const Text('Status'),
@@ -192,43 +222,59 @@ class _RotaCard extends StatelessWidget {
 
   Color get _statusColor {
     switch (rota.status) {
-      case RotaStatus.pendente:    return AppColors.textLight;
-      case RotaStatus.liberada:    return AppColors.primary;
-      case RotaStatus.emAndamento: return AppColors.warning;
-      case RotaStatus.finalizada:  return AppColors.success;
+      case RotaStatus.pendente:
+        return AppColors.textLight;
+      case RotaStatus.liberada:
+        return AppColors.primary;
+      case RotaStatus.emAndamento:
+        return AppColors.warning;
+      case RotaStatus.finalizada:
+        return AppColors.success;
     }
   }
 
   String get _statusLabel {
     switch (rota.status) {
-      case RotaStatus.pendente:    return 'Pendente';
-      case RotaStatus.liberada:    return 'Liberada';
-      case RotaStatus.emAndamento: return 'Em andamento';
-      case RotaStatus.finalizada:  return 'Finalizada';
+      case RotaStatus.pendente:
+        return 'Pendente';
+      case RotaStatus.liberada:
+        return 'Liberada';
+      case RotaStatus.emAndamento:
+        return 'Em andamento';
+      case RotaStatus.finalizada:
+        return 'Finalizada';
     }
   }
 
   IconData get _statusIcon {
     switch (rota.status) {
-      case RotaStatus.pendente:    return Icons.hourglass_empty_rounded;
-      case RotaStatus.liberada:    return Icons.check_box_outlined;
-      case RotaStatus.emAndamento: return Icons.directions_car_rounded;
-      case RotaStatus.finalizada:  return Icons.check_circle_rounded;
+      case RotaStatus.pendente:
+        return Icons.hourglass_empty_rounded;
+      case RotaStatus.liberada:
+        return Icons.check_box_outlined;
+      case RotaStatus.emAndamento:
+        return Icons.directions_car_rounded;
+      case RotaStatus.finalizada:
+        return Icons.check_circle_rounded;
     }
   }
 
   String _formatDate(DateTime d) {
-    final hoje  = DateTime.now();
+    final hoje = DateTime.now();
     final ontem = hoje.subtract(const Duration(days: 1));
-    if (d.year == hoje.year  && d.month == hoje.month  && d.day == hoje.day)  return 'Hoje';
-    if (d.year == ontem.year && d.month == ontem.month && d.day == ontem.day) return 'Ontem';
+    if (d.year == hoje.year && d.month == hoje.month && d.day == hoje.day)
+      return 'Hoje';
+    if (d.year == ontem.year && d.month == ontem.month && d.day == ontem.day)
+      return 'Ontem';
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     final concluidas = rota.coletadas + rota.recusadas + rota.adiadas;
-    final progresso  = rota.totalFazendas > 0 ? concluidas / rota.totalFazendas : 0.0;
+    final progresso = rota.totalFazendas > 0
+        ? concluidas / rota.totalFazendas
+        : 0.0;
 
     return Material(
       color: Colors.transparent,
@@ -243,22 +289,39 @@ class _RotaCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _statusColor.withValues(alpha: 0.4), width: 1.5),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 6, offset: const Offset(0, 2))],
+            border: Border.all(
+              color: _statusColor.withValues(alpha: 0.4),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.07),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Nome + status
-              Row(children: [
-                Expanded(
-                  child: Text(rota.nome,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                ),
-                const SizedBox(width: 8),
-                _badge(_statusLabel, _statusColor, _statusIcon),
-              ]),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      rota.nome,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _badge(_statusLabel, _statusColor, _statusIcon),
+                ],
+              ),
               const SizedBox(height: 10),
 
               // Infos
@@ -270,12 +333,27 @@ class _RotaCard extends StatelessWidget {
               const SizedBox(height: 12),
 
               // Barra de progresso
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('$concluidas de ${rota.totalFazendas} fazenda(s)',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textMedium, fontWeight: FontWeight.w600)),
-                Text('${(progresso * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(fontSize: 12, color: _statusColor, fontWeight: FontWeight.bold)),
-              ]),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$concluidas de ${rota.totalFazendas} fazenda(s)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMedium,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${(progresso * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -288,23 +366,53 @@ class _RotaCard extends StatelessWidget {
               ),
 
               // Pills de resumo
-              if (rota.coletadas > 0 || rota.adiadas > 0 || rota.pendentes > 0) ...[
+              if (rota.coletadas > 0 ||
+                  rota.adiadas > 0 ||
+                  rota.pendentes > 0) ...[
                 const SizedBox(height: 10),
-                Wrap(spacing: 6, children: [
-                  if (rota.coletadas > 0) _miniPill('${rota.coletadas} coletadas', AppColors.success),
-                  if (rota.recusadas > 0) _miniPill('${rota.recusadas} recusadas', AppColors.error),
-                  if (rota.adiadas > 0)   _miniPill('${rota.adiadas} adiadas', AppColors.warning),
-                  if (rota.pendentes > 0) _miniPill('${rota.pendentes} pendentes', AppColors.textLight),
-                ]),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    if (rota.coletadas > 0)
+                      _miniPill(
+                        '${rota.coletadas} coletadas',
+                        AppColors.success,
+                      ),
+                    if (rota.recusadas > 0)
+                      _miniPill('${rota.recusadas} recusadas', AppColors.error),
+                    if (rota.adiadas > 0)
+                      _miniPill('${rota.adiadas} adiadas', AppColors.warning),
+                    if (rota.pendentes > 0)
+                      _miniPill(
+                        '${rota.pendentes} pendentes',
+                        AppColors.textLight,
+                      ),
+                  ],
+                ),
               ],
 
               const SizedBox(height: 10),
-              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                Text(rota.status == RotaStatus.finalizada ? 'Ver detalhes' : 'Abrir rota',
-                    style: const TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 18),
-              ]),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    rota.status == RotaStatus.finalizada
+                        ? 'Ver detalhes'
+                        : 'Abrir rota',
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -312,13 +420,19 @@ class _RotaCard extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(IconData icon, String text) => Row(children: [
-    Icon(icon, size: 14, color: AppColors.textLight),
-    const SizedBox(width: 6),
-    Expanded(child: Text(text,
-        style: const TextStyle(fontSize: 12, color: AppColors.textMedium),
-        overflow: TextOverflow.ellipsis)),
-  ]);
+  Widget _infoRow(IconData icon, String text) => Row(
+    children: [
+      Icon(icon, size: 14, color: AppColors.textLight),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 12, color: AppColors.textMedium),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ],
+  );
 
   Widget _badge(String label, Color color, IconData icon) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -327,11 +441,21 @@ class _RotaCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       border: Border.all(color: color.withValues(alpha: 0.35)),
     ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 13, color: color),
-      const SizedBox(width: 5),
-      Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
-    ]),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
   );
 
   Widget _miniPill(String text, Color color) => Container(
@@ -340,6 +464,9 @@ class _RotaCard extends StatelessWidget {
       color: color.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(20),
     ),
-    child: Text(text, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+    child: Text(
+      text,
+      style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
+    ),
   );
 }
