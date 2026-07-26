@@ -151,6 +151,7 @@ class _HomePageState extends State<HomePage> {
             onSelected: (value) {
               if (value == 'atualizar') _abrirAtualizar();
               if (value == 'configuracoes') _abrirConfiguracoes();
+              if (value == 'versao') verificarAtualizacaoManualmente(context);
               if (value == 'sair') _handleLogout();
             },
             itemBuilder: (_) => [
@@ -168,6 +169,14 @@ class _HomePageState extends State<HomePage> {
                 child: _MenuItemRow(
                   icon: Icons.settings_outlined,
                   label: 'Configurações',
+                  color: AppColors.textMedium,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'versao',
+                child: _MenuItemRow(
+                  icon: Icons.system_update,
+                  label: 'Verificar atualizações',
                   color: AppColors.textMedium,
                 ),
               ),
