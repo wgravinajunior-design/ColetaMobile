@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/coleta_provider.dart';
+import '../../services/api_service.dart';
 
+/// Cadastro de veículo pelo celular.
+///
+/// Só o essencial — placa, descrição e modelo — o bastante para saber qual
+/// carro sai para a coleta. O resto do cadastro fica na retaguarda.
+///
+/// A consulta por placa vai à base da retaguarda: se o carro já existir, o
+/// formulário passa a editá-lo em vez de criar um segundo registro.
 class VeiculoForm extends StatefulWidget {
   const VeiculoForm({super.key});
 
@@ -11,50 +20,127 @@ class VeiculoForm extends StatefulWidget {
 
 class _VeiculoFormState extends State<VeiculoForm> {
   final _formKey = GlobalKey<FormState>();
-  final _descricaoController = TextEditingController();
   final _placaController = TextEditingController();
-  final _capacidadeController = TextEditingController();
-  final _consumoController = TextEditingController();
-  VeiculoStatus _selectedStatus = VeiculoStatus.ativo;
+  final _descricaoController = TextEditingController();
+  final _modeloController = TextEditingController();
+
+  VeiculoStatus _status = VeiculoStatus.ativo;
+
+  /// Preenchido quando a consulta encontra a placa: dali em diante o formulário
+  /// altera esse registro em vez de incluir um novo.
+  int? _idExistente;
+
+  bool _consultando = false;
+  bool _salvando = false;
+  String? _avisoPlaca;
 
   @override
   void dispose() {
-    _descricaoController.dispose();
     _placaController.dispose();
-    _capacidadeController.dispose();
-    _consumoController.dispose();
+    _descricaoController.dispose();
+    _modeloController.dispose();
     super.dispose();
   }
 
-  bool _isSaving = false;
+  Future<void> _consultarPlaca() async {
+    final placa = _placaController.text.trim();
+    if (placa.isEmpty) {
+      setState(() => _avisoPlaca = 'Digite a placa para consultar.');
+      return;
+    }
+
+    setState(() {
+      _consultando = true;
+      _avisoPlaca = null;
+    });
+
+    try {
+      final dados = await ApiService.consultarVeiculoPorPlaca(placa);
+      if (!mounted) return;
+
+      if (dados == null) {
+        setState(() {
+          _idExistente = null;
+          _avisoPlaca = 'Placa não cadastrada — preencha para incluir.';
+        });
+        return;
+      }
+
+      setState(() {
+        _idExistente = dados['id'] as int?;
+        _placaController.text = '${dados['placa'] ?? placa}';
+        _descricaoController.text = '${dados['descricao'] ?? ''}';
+        _modeloController.text = '${dados['modelo'] ?? ''}';
+        _status = '${dados['status']}' == 'INATIVO'
+            ? VeiculoStatus.inativo
+            : VeiculoStatus.ativo;
+        _avisoPlaca = 'Veículo encontrado. Os dados vieram da base.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _avisoPlaca = 'Não foi possível consultar agora: sem conexão '
+            'com a retaguarda.',
+      );
+      debugPrint('[VeiculoForm] consulta de placa falhou: $e');
+    } finally {
+      if (mounted) setState(() => _consultando = false);
+    }
+  }
 
   Future<void> _salvar() async {
-    if (_isSaving || !_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
+    if (_salvando || !_formKey.currentState!.validate()) return;
+    setState(() => _salvando = true);
+
     final provider = Provider.of<ColetaProvider>(context, listen: false);
-    await provider.addVeiculo(Veiculo(
-      id: 0,
-      descricao: _descricaoController.text.trim(),
-      placa: _placaController.text.trim().toUpperCase(),
-      capacidadeLitros: double.tryParse(_capacidadeController.text) ?? 0.0,
-      consumoMedio: double.tryParse(_consumoController.text) ?? 0.0,
-      status: _selectedStatus,
-    ));
-    if (!mounted) return;
-    setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Veículo cadastrado com sucesso!'), backgroundColor: Colors.green),
-    );
-    Navigator.of(context).pop();
+    try {
+      await provider.salvarVeiculo(
+        Veiculo(
+          id: _idExistente ?? 0,
+          placa: _placaController.text.trim().toUpperCase(),
+          descricao: _descricaoController.text.trim(),
+          modelo: _modeloController.text.trim(),
+          status: _status,
+        ),
+        idExistente: _idExistente,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _idExistente == null ? 'Veículo cadastrado.' : 'Veículo atualizado.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _salvando = false);
+      // O cadastro precisa chegar ao ERP; dar como salvo aqui esconderia que
+      // ele não existe para as rotas.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Não foi possível salvar: ${e.toString().replaceFirst("Exception: ", "")}'
+            '\nConfira a conexão com a retaguarda e tente de novo.',
+          ),
+          backgroundColor: Colors.orange.shade800,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final editando = _idExistente != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Novo Veículo'),
+        title: Text(editando ? 'Editar veículo' : 'Novo veículo'),
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -70,130 +156,167 @@ class _VeiculoFormState extends State<VeiculoForm> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Identificação do Veículo',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descricaoController,
-                decoration: InputDecoration(
-                  labelText: 'Descrição / Modelo do Caminhão',
-                  prefixIcon: const Icon(Icons.directions_car),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Campo obrigatório';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _placaController,
-                decoration: InputDecoration(
-                  labelText: 'Placa',
-                  prefixIcon: const Icon(Icons.credit_card),
-                  hintText: 'ABC-1234 ou ABC1D23',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Campo obrigatório';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Especificações do Tanque e Consumo',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: TextFormField(
-                      controller: _capacidadeController,
-                      keyboardType: TextInputType.number,
+                      controller: _placaController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        _MaiusculasFormatter(),
+                        LengthLimitingTextInputFormatter(10),
+                      ],
                       decoration: InputDecoration(
-                        labelText: 'Capacidade (L)',
-                        prefixIcon: const Icon(Icons.opacity),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        labelText: 'Placa',
+                        prefixIcon: const Icon(Icons.credit_card),
+                        hintText: 'ABC1D23',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Campo obrigatório';
-                        }
-                        if (double.tryParse(value) == null) {
-                          return 'Valor inválido';
-                        }
-                        return null;
-                      },
+                      validator: (v) => (v == null || v.trim().length < 7)
+                          ? 'Informe a placa completa'
+                          : null,
+                      onFieldSubmitted: (_) => _consultarPlaca(),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _consumoController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        labelText: 'Consumo Médio (Km/L)',
-                        prefixIcon: const Icon(Icons.speed),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    height: 58,
+                    child: ElevatedButton(
+                      onPressed: _consultando ? null : _consultarPlaca,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Campo obrigatório';
-                        }
-                        if (double.tryParse(value) == null) {
-                          return 'Valor inválido';
-                        }
-                        return null;
-                      },
+                      child: _consultando
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.search),
                     ),
                   ),
                 ],
               ),
+              if (_avisoPlaca != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _avisoPlaca!,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: editando
+                        ? Colors.green.shade800
+                        : Colors.grey.shade700,
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 18),
+              TextFormField(
+                controller: _descricaoController,
+                decoration: InputDecoration(
+                  labelText: 'Descrição',
+                  hintText: 'Como o carro é chamado: "Caminhão 1"',
+                  prefixIcon: const Icon(Icons.local_shipping_rounded),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Campo obrigatório'
+                    : null,
+              ),
+
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _modeloController,
+                decoration: InputDecoration(
+                  labelText: 'Modelo',
+                  prefixIcon: const Icon(Icons.directions_car),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 16),
               DropdownButtonFormField<VeiculoStatus>(
                 decoration: InputDecoration(
-                  labelText: 'Status do Veículo',
+                  labelText: 'Situação',
                   prefixIcon: const Icon(Icons.check_circle_outline),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                value: _selectedStatus,
+                initialValue: _status,
                 items: const [
-                  DropdownMenuItem(value: VeiculoStatus.ativo, child: Text('Ativo')),
-                  DropdownMenuItem(value: VeiculoStatus.inativo, child: Text('Inativo')),
-                  DropdownMenuItem(value: VeiculoStatus.manutencao, child: Text('Manutenção')),
+                  DropdownMenuItem(
+                    value: VeiculoStatus.ativo,
+                    child: Text('Ativo'),
+                  ),
+                  DropdownMenuItem(
+                    value: VeiculoStatus.inativo,
+                    child: Text('Inativo'),
+                  ),
                 ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _selectedStatus = val;
-                    });
-                  }
-                },
+                onChanged: (v) => setState(() => _status = v ?? _status),
               ),
-              const SizedBox(height: 36),
+
+              const SizedBox(height: 32),
               ElevatedButton(
-                onPressed: _salvar,
+                onPressed: _salvando ? null : _salvar,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                child: _isSaving
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Salvar Veículo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: _salvando
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        editando ? 'Salvar alterações' : 'Salvar veículo',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Mantém a placa em maiúsculas enquanto se digita.
+class _MaiusculasFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }

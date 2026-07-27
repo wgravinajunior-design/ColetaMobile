@@ -74,6 +74,7 @@ class Veiculo {
   final int id;
   final String descricao;
   final String placa;
+  final String modelo;
   final double capacidadeLitros;
   final double consumoMedio;
   final VeiculoStatus status;
@@ -81,8 +82,9 @@ class Veiculo {
     required this.id,
     required this.descricao,
     required this.placa,
-    required this.capacidadeLitros,
-    required this.consumoMedio,
+    this.modelo = '',
+    this.capacidadeLitros = 0,
+    this.consumoMedio = 0,
     required this.status,
   });
 }
@@ -514,8 +516,9 @@ class ColetaProvider extends ChangeNotifier {
     id: m['id'] as int,
     descricao: m['descricao'] as String,
     placa: m['placa'] as String,
-    capacidadeLitros: (m['capacidade_litros'] as num).toDouble(),
-    consumoMedio: (m['consumo_medio'] as num).toDouble(),
+    modelo: (m['modelo'] as String?) ?? '',
+    capacidadeLitros: (m['capacidade_litros'] as num?)?.toDouble() ?? 0,
+    consumoMedio: (m['consumo_medio'] as num?)?.toDouble() ?? 0,
     status: _parseVeiculoStatus(m['status'] as String),
   );
 
@@ -864,24 +867,54 @@ class ColetaProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addVeiculo(Veiculo v) async {
-    final id = await DatabaseService.insertVeiculo({
+  /// Cadastra ou altera um veículo.
+  ///
+  /// Vai primeiro ao servidor: o veículo precisa existir na base do ERP para
+  /// aparecer nas rotas, e o id que vale é o de lá. Antes isto gravava só no
+  /// SQLite do aparelho, e o cadastro sumia na sincronização seguinte.
+  ///
+  /// Lança se o servidor recusar ou estiver fora do ar — quem chamou mostra o
+  /// motivo, em vez de dar o cadastro como salvo.
+  Future<void> salvarVeiculo(Veiculo v, {int? idExistente}) async {
+    final idNoErp = await ApiService.salvarVeiculo({
+      'placa': v.placa,
+      'descricao': v.descricao,
+      'modelo': v.modelo,
+    }, id: idExistente);
+
+    final linha = {
       'descricao': v.descricao,
       'placa': v.placa,
+      'modelo': v.modelo,
       'capacidade_litros': v.capacidadeLitros,
       'consumo_medio': v.consumoMedio,
       'status': _veiculoStatusStr(v.status),
-    });
-    _veiculos.add(
-      Veiculo(
-        id: id,
-        descricao: v.descricao,
-        placa: v.placa,
-        capacidadeLitros: v.capacidadeLitros,
-        consumoMedio: v.consumoMedio,
-        status: v.status,
-      ),
+    };
+
+    // Espelha localmente com o id do ERP, para a lista já mostrar o veículo
+    // sem depender da próxima sincronização.
+    final id = idNoErp ?? idExistente;
+    if (id != null) {
+      await DatabaseService.upsertVeiculo({'id': id, ...linha});
+    } else {
+      await DatabaseService.insertVeiculo(linha);
+    }
+
+    final novo = Veiculo(
+      id: id ?? 0,
+      descricao: v.descricao,
+      placa: v.placa,
+      modelo: v.modelo,
+      capacidadeLitros: v.capacidadeLitros,
+      consumoMedio: v.consumoMedio,
+      status: v.status,
     );
+    final i = _veiculos.indexWhere((x) => x.id == novo.id && novo.id != 0);
+    if (i >= 0) {
+      _veiculos[i] = novo;
+    } else {
+      _veiculos.add(novo);
+    }
     notifyListeners();
   }
 

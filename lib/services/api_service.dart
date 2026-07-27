@@ -471,6 +471,69 @@ class ApiService {
     }
   }
 
+  // ─── Veículos ─────────────────────────────────────────────────────────────
+
+  /// Consulta uma placa na base da retaguarda.
+  ///
+  /// Devolve os dados do veículo se a placa já estiver cadastrada, ou nulo se
+  /// não estiver (404) — é assim que o formulário sabe se está incluindo ou
+  /// editando. Lança se o servidor estiver fora do ar, para a tela poder
+  /// avisar em vez de dar a placa como inexistente.
+  static Future<Map<String, dynamic>?> consultarVeiculoPorPlaca(
+    String placa,
+  ) async {
+    final res = await _get(
+      '/coleta/veiculos/placa/${Uri.encodeComponent(placa.trim())}',
+    );
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw Exception('Servidor respondeu ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body);
+    if (body is Map && body['data'] is Map) {
+      return Map<String, dynamic>.from(body['data'] as Map);
+    }
+    return null;
+  }
+
+  /// Envia um veículo à retaguarda. Sem [id], inclui; com [id], altera.
+  ///
+  /// Devolve o id gravado na base do ERP. O servidor também trata placa
+  /// repetida como alteração, então cadastrar duas vezes não gera duplicado.
+  static Future<int?> salvarVeiculo(
+    Map<String, dynamic> dados, {
+    int? id,
+  }) async {
+    final res = id == null
+        ? await _post('/coleta/veiculos', dados)
+        : await _put('/coleta/veiculos/$id', dados);
+
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      debugPrint(
+        '[ApiService] salvarVeiculo → ${res.statusCode}: ${res.body}',
+      );
+      throw Exception(_mensagemDeErro(res.body, res.statusCode));
+    }
+
+    final body = jsonDecode(res.body);
+    if (body is Map && body['id'] is int) return body['id'] as int;
+    return id;
+  }
+
+  /// Extrai a mensagem que o servidor mandou, quando ele mandou alguma.
+  static String _mensagemDeErro(String corpo, int status) {
+    try {
+      final body = jsonDecode(corpo);
+      if (body is Map) {
+        final msg = body['message'] ?? body['error'] ?? body['mensagem'];
+        if (msg != null && '$msg'.trim().isNotEmpty) return '$msg';
+      }
+    } catch (_) {
+      // corpo não era JSON — cai no genérico
+    }
+    return 'O servidor respondeu $status.';
+  }
+
   /// Atualiza dados de uma coleta detalhe no servidor.
   /// Retorna true se o servidor confirmou (para limpar pending_sync local).
   static Future<bool> pushColetaDetalhe(

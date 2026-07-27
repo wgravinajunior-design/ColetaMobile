@@ -634,7 +634,10 @@ class _CadastrosTabState extends State<CadastrosTab> {
                 _buildRegistrationCard(
                   title: 'Veículos / Caminhões',
                   icon: Icons.local_shipping_rounded,
-                  bullets: ['Placa · Capacidade', 'Consumo médio · Status'],
+                  bullets: [
+                    'Consulta pela placa na base',
+                    'Descrição · Modelo · Situação',
+                  ],
                   formWidget: const VeiculoForm(),
                 ),
                 const SizedBox(height: 10),

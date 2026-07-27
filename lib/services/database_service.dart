@@ -13,7 +13,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'coleta_leite.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -26,6 +26,8 @@ class DatabaseService {
   /// Migrações incrementais e não-destrutivas.
   /// v2: coluna pending_sync (marca linhas alteradas localmente e ainda não
   ///     enviadas ao servidor, para o download não as sobrescrever).
+  /// v3: veiculos.modelo, para o cadastro de veículo pelo celular acompanhar
+  ///     o VEI_MODELO da base.
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       for (final tabela in ['coletas_detalhe', 'coletas_rota']) {
@@ -36,6 +38,15 @@ class DatabaseService {
         } catch (_) {
           // coluna já existe — ignora
         }
+      }
+    }
+    if (oldVersion < 3) {
+      try {
+        await db.execute(
+          "ALTER TABLE veiculos ADD COLUMN modelo TEXT NOT NULL DEFAULT ''",
+        );
+      } catch (_) {
+        // coluna já existe — ignora
       }
     }
   }
@@ -72,6 +83,7 @@ class DatabaseService {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       descricao TEXT NOT NULL,
       placa TEXT NOT NULL,
+      modelo TEXT NOT NULL DEFAULT '',
       capacidade_litros REAL NOT NULL,
       consumo_medio REAL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'ATIVO'
