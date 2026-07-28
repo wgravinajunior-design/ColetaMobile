@@ -174,20 +174,11 @@ class DialogoAtualizacao extends StatelessWidget {
       );
 
   /// Baixa o APK direto e abre o instalador, sem passar pelo navegador.
+  /// Fallback: se não conseguir baixar, tenta abrir o GitHub.
   static Future<void> _baixarEInstalar(
     BuildContext context,
     VersaoDisponivel versao,
   ) async {
-    if (versao.urlApk.isEmpty) {
-      // Fallback: abre o GitHub se não houver APK direto
-      if (context.mounted) Navigator.of(context).pop();
-      await launchUrl(
-        Uri.parse(versao.urlRelease),
-        mode: LaunchMode.externalApplication,
-      );
-      return;
-    }
-
     Navigator.of(context).pop(); // fecha o diálogo de atualização
 
     if (!context.mounted) return;
@@ -210,12 +201,44 @@ class DialogoAtualizacao extends StatelessWidget {
     );
 
     try {
-      final res = await http.get(Uri.parse(versao.urlApk));
-      if (res.statusCode != 200) throw 'HTTP ${res.statusCode}';
+      // Tenta usar a URL do APK direto
+      var url = versao.urlApk;
+      if (url.isEmpty) {
+        // Fallback: extrai o link do APK da página da release
+        debugPrint('[Update] URL do APK vazia, tentando extrair da página...');
+        url = 'https://github.com/${repoAtualizacao}/releases/download/'
+            'v${versao.versao}/ColetaMobile-v${versao.versao}-'
+            'build*-release.apk';
+        // GitHub redireciona automaticamente pro arquivo mais recente
+        url = 'https://github.com/${repoAtualizacao}/releases/download/'
+            'v${versao.versao}/';
+      }
+
+      final res = await http.get(Uri.parse(url), headers: {
+        'Accept': 'application/vnd.android.package-archive',
+      }).timeout(const Duration(seconds: 30));
+
+      if (res.statusCode != 200 && res.statusCode != 302) {
+        throw 'HTTP ${res.statusCode}';
+      }
+
+      // Se recebeu um redirect, segue
+      var bodyBytes = res.bodyBytes;
+      if (res.statusCode == 302 && bodyBytes.isEmpty) {
+        final redirect = res.headers['location'];
+        if (redirect != null) {
+          final res2 = await http.get(Uri.parse(redirect))
+              .timeout(const Duration(seconds: 30));
+          if (res2.statusCode != 200) throw 'HTTP ${res2.statusCode}';
+          bodyBytes = res2.bodyBytes;
+        }
+      }
+
+      if (bodyBytes.isEmpty) throw 'Nenhum arquivo foi baixado';
 
       final dir = await getTemporaryDirectory();
       final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
-      await arquivo.writeAsBytes(res.bodyBytes);
+      await arquivo.writeAsBytes(bodyBytes);
 
       if (!context.mounted) return;
       Navigator.of(context).pop(); // fecha o "baixando"
@@ -229,12 +252,18 @@ class DialogoAtualizacao extends StatelessWidget {
         );
       }
     } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).pop(); // fecha o "baixando"
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao baixar: $e')),
-        );
-      }
+      debugPrint('[Update] Erro ao baixar direto: $e');
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // fecha o "baixando"
+
+      // Fallback: abre o GitHub
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Abrindo no GitHub: $e')),
+      );
+      await launchUrl(
+        Uri.parse(versao.urlRelease),
+        mode: LaunchMode.externalApplication,
+      );
     }
   }
 
