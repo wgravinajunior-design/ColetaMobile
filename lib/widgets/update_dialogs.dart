@@ -239,104 +239,80 @@ class DialogoAtualizacao extends StatelessWidget {
 
       debugPrint('[Update] URL: $url');
 
-      final client = http.Client();
-      final req = http.Request('GET', Uri.parse(url))
-        ..headers['Accept'] = 'application/vnd.android.package-archive';
+      // Download com http.get() de forma simples e robusta
+      final res = await http.get(Uri.parse(url), headers: {
+        'Accept': 'application/vnd.android.package-archive',
+      }).timeout(const Duration(minutes: 5));
 
-      final streamRes = await client.send(req).timeout(
-        const Duration(seconds: 30),
-      );
-
-      if (streamRes.statusCode != 200 && streamRes.statusCode != 302) {
-        throw 'HTTP ${streamRes.statusCode}';
+      if (res.statusCode != 200) {
+        throw 'HTTP ${res.statusCode}';
       }
 
-      final tamanhoTotal =
-          streamRes.contentLength ?? versao.tamanhoBytes.toDouble();
-      double tamanhoRecebido = 0.0;
-      final chunks = <int>[];
+      final tamanhoTotal = res.bodyBytes.length.toDouble();
+      debugPrint('[Update] Download concluído: ${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB');
 
-      debugPrint('[Update] Tamanho total: ${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB');
+      // Atualiza UI para 100%
+      progresso = 1.0;
+      statusTexto = 'Finalizando...';
+      atualizarDialogo(() {});
 
-      // Completer para controlar explicitamente o fim do download
-      final completer = Completer<List<int>>();
-      var hasError = false;
-
-      streamRes.stream.listen(
-        (chunk) {
-          chunks.addAll(chunk);
-          tamanhoRecebido += chunk.length;
-          progresso = tamanhoTotal > 0
-              ? (tamanhoRecebido / tamanhoTotal).clamp(0.0, 1.0)
-              : 0.0;
-          statusTexto =
-              'Baixando ${(tamanhoRecebido / 1048576).toStringAsFixed(1)} MB'
-              '/${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB';
-
-          atualizarDialogo(() {
-            // Força rebuild do diálogo com os novos valores
-          });
-        },
-        onDone: () {
-          debugPrint('[Update] Download completo (100%)');
-          if (!hasError) completer.complete(chunks);
-        },
-        onError: (e) {
-          debugPrint('[Update] Erro no stream: $e');
-          hasError = true;
-          completer.completeError(e);
-        },
-        cancelOnError: true,
-      );
-
-      // Aguarda explicitamente o completer
-      final downloadedChunks = await completer.future;
-
-      if (downloadedChunks.isEmpty) throw 'Nenhum arquivo foi baixado';
-
-      debugPrint('[Update] Salvando arquivo...');
+      // Pequeno delay para mostrar 100% ao usuário
+      await Future.delayed(const Duration(milliseconds: 500));
 
       // Salva o arquivo
+      debugPrint('[Update] Salvando arquivo...');
       final dir = await getTemporaryDirectory();
       final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
-      await arquivo.writeAsBytes(downloadedChunks);
+      await arquivo.writeAsBytes(res.bodyBytes);
 
-      debugPrint('[Update] Arquivo salvo: ${arquivo.path}');
+      debugPrint('[Update] Arquivo salvo em ${arquivo.path} (${arquivo.lengthSync()} bytes)');
 
       if (!context.mounted) {
-        debugPrint('[Update] Context não mounted, cancelando');
+        debugPrint('[Update] Context não mounted após salvar');
         return;
       }
 
-      Navigator.of(context).pop(); // fecha o diálogo de progresso
-      debugPrint('[Update] Diálogo fechado, abrindo APK...');
+      // Fecha o diálogo ANTES de tentar abrir o APK
+      try {
+        Navigator.of(context).pop();
+        debugPrint('[Update] Diálogo fechado');
+      } catch (e) {
+        debugPrint('[Update] Erro ao fechar diálogo: $e');
+      }
+
+      // Aguarda um pouco para o diálogo desaparecer
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      debugPrint('[Update] Abrindo instalador...');
 
       // Abre o instalador
       final resultado = await OpenFile.open(arquivo.path);
       debugPrint('[Update] OpenFile resultado: ${resultado.type} - ${resultado.message}');
 
-      if (resultado.type != ResultType.done && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Não foi possível abrir o APK: ${resultado.message}',
+      if (resultado.type != ResultType.done) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Não foi possível abrir: ${resultado.message}',
+              ),
             ),
-          ),
-        );
+          );
+        }
+        throw 'OpenFile falhou: ${resultado.message}';
       }
     } catch (e) {
-      debugPrint('[Update] Erro ao baixar direto: $e');
+      debugPrint('[Update] ❌ Erro: $e');
       if (!context.mounted) return;
 
       try {
-        Navigator.of(context).pop(); // fecha o diálogo de progresso
-      } catch (_) {
-        // Já foi fechado
-      }
+        Navigator.of(context).pop();
+      } catch (_) {}
 
       // Fallback: abre o GitHub
+      debugPrint('[Update] Abrindo GitHub como fallback');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Abrindo no GitHub: $e')),
+        SnackBar(content: Text('Erro: $e. Abrindo GitHub...')),
       );
       await launchUrl(
         Uri.parse(versao.urlRelease),
