@@ -228,12 +228,16 @@ class DialogoAtualizacao extends StatelessWidget {
     );
 
     try {
+      debugPrint('[Update] Iniciando download de ${versao.versao}');
+
       // Tenta usar a URL do APK direto
       var url = versao.urlApk;
       if (url.isEmpty) {
         url = 'https://github.com/${repoAtualizacao}/releases/download/'
             'v${versao.versao}/';
       }
+
+      debugPrint('[Update] URL: $url');
 
       final client = http.Client();
       final req = http.Request('GET', Uri.parse(url))
@@ -251,40 +255,66 @@ class DialogoAtualizacao extends StatelessWidget {
           streamRes.contentLength ?? versao.tamanhoBytes.toDouble();
       double tamanhoRecebido = 0.0;
       final chunks = <int>[];
-      String mensagemErro = '';
 
-      // Aguarda o stream completar
-      await streamRes.stream.forEach((chunk) {
-        chunks.addAll(chunk);
-        tamanhoRecebido += chunk.length;
-        progresso = tamanhoTotal > 0
-            ? (tamanhoRecebido / tamanhoTotal).clamp(0.0, 1.0)
-            : 0.0;
-        statusTexto =
-            'Baixando ${(tamanhoRecebido / 1048576).toStringAsFixed(1)} MB'
-            '/${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB';
+      debugPrint('[Update] Tamanho total: ${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB');
 
-        atualizarDialogo(() {
-          // Força rebuild do diálogo com os novos valores
-        });
-      }).catchError((e) {
-        mensagemErro = 'Erro no download: $e';
-        throw e;
-      });
+      // Completer para controlar explicitamente o fim do download
+      final completer = Completer<List<int>>();
+      var hasError = false;
 
-      if (mensagemErro.isNotEmpty) throw mensagemErro;
-      if (chunks.isEmpty) throw 'Nenhum arquivo foi baixado';
+      streamRes.stream.listen(
+        (chunk) {
+          chunks.addAll(chunk);
+          tamanhoRecebido += chunk.length;
+          progresso = tamanhoTotal > 0
+              ? (tamanhoRecebido / tamanhoTotal).clamp(0.0, 1.0)
+              : 0.0;
+          statusTexto =
+              'Baixando ${(tamanhoRecebido / 1048576).toStringAsFixed(1)} MB'
+              '/${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB';
+
+          atualizarDialogo(() {
+            // Força rebuild do diálogo com os novos valores
+          });
+        },
+        onDone: () {
+          debugPrint('[Update] Download completo (100%)');
+          if (!hasError) completer.complete(chunks);
+        },
+        onError: (e) {
+          debugPrint('[Update] Erro no stream: $e');
+          hasError = true;
+          completer.completeError(e);
+        },
+        cancelOnError: true,
+      );
+
+      // Aguarda explicitamente o completer
+      final downloadedChunks = await completer.future;
+
+      if (downloadedChunks.isEmpty) throw 'Nenhum arquivo foi baixado';
+
+      debugPrint('[Update] Salvando arquivo...');
 
       // Salva o arquivo
       final dir = await getTemporaryDirectory();
       final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
-      await arquivo.writeAsBytes(chunks);
+      await arquivo.writeAsBytes(downloadedChunks);
 
-      if (!context.mounted) return;
+      debugPrint('[Update] Arquivo salvo: ${arquivo.path}');
+
+      if (!context.mounted) {
+        debugPrint('[Update] Context não mounted, cancelando');
+        return;
+      }
+
       Navigator.of(context).pop(); // fecha o diálogo de progresso
+      debugPrint('[Update] Diálogo fechado, abrindo APK...');
 
       // Abre o instalador
       final resultado = await OpenFile.open(arquivo.path);
+      debugPrint('[Update] OpenFile resultado: ${resultado.type} - ${resultado.message}');
+
       if (resultado.type != ResultType.done && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
