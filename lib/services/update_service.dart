@@ -66,12 +66,14 @@ class UpdateService {
 
   /// Última release, ou null se já estamos atualizados / a rede falhou.
   /// Nunca lança: uma checagem de atualização não pode impedir o app de abrir.
+  /// Detecta qualquer versão mais nova (inclui beta/prerelease).
   static Future<VersaoDisponivel?> verificar() async {
     try {
+      // /releases/latest ignora prerelease; busca todas e pega a mais nova
       final resposta = await http
           .get(
             Uri.parse(
-              'https://api.github.com/repos/$repoAtualizacao/releases/latest',
+              'https://api.github.com/repos/$repoAtualizacao/releases?per_page=10',
             ),
             headers: {'Accept': 'application/vnd.github+json'},
           )
@@ -79,23 +81,33 @@ class UpdateService {
 
       if (resposta.statusCode != 200) return null;
 
-      final json = jsonDecode(resposta.body) as Map<String, dynamic>;
-      final tag = (json['tag_name'] as String?)?.replaceFirst('v', '') ?? '';
-      if (tag.isEmpty || !ehMaisNova(tag, appVersao)) return null;
+      final releases = (jsonDecode(resposta.body) as List?)
+              ?.cast<Map<String, dynamic>>() ??
+          const [];
 
-      final assets = (json['assets'] as List?) ?? const [];
-      final apk = assets.cast<Map<String, dynamic>>().firstWhere(
-        (a) => (a['name'] as String? ?? '').toLowerCase().endsWith('.apk'),
-        orElse: () => <String, dynamic>{},
-      );
+      // Procura primeira release que é mais nova que a atual
+      for (final release in releases) {
+        final tag =
+            (release['tag_name'] as String?)?.replaceFirst('v', '') ?? '';
+        if (tag.isEmpty || !ehMaisNova(tag, appVersao)) continue;
 
-      return VersaoDisponivel(
-        versao: tag,
-        notas: (json['body'] as String?) ?? '',
-        urlApk: (apk['browser_download_url'] as String?) ?? '',
-        urlRelease: (json['html_url'] as String?) ?? '',
-        tamanhoBytes: (apk['size'] as int?) ?? 0,
-      );
+        final assets = (release['assets'] as List?) ?? const [];
+        final apk = assets.cast<Map<String, dynamic>>().firstWhere(
+          (a) => (a['name'] as String? ?? '').toLowerCase().endsWith('.apk'),
+          orElse: () => <String, dynamic>{},
+        );
+
+        if (apk.isEmpty) continue; // sem APK, ignora
+
+        return VersaoDisponivel(
+          versao: tag,
+          notas: (release['body'] as String?) ?? '',
+          urlApk: (apk['browser_download_url'] as String?) ?? '',
+          urlRelease: (release['html_url'] as String?) ?? '',
+          tamanhoBytes: (apk['size'] as int?) ?? 0,
+        );
+      }
+      return null;
     } catch (e) {
       debugPrint('[UpdateService] falha ao verificar: $e');
       return null;
