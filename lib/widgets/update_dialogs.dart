@@ -1,4 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../main.dart' show AppColors;
 import '../services/update_service.dart';
@@ -169,6 +173,71 @@ class DialogoAtualizacao extends StatelessWidget {
         builder: (_) => DialogoAtualizacao(versao: v),
       );
 
+  /// Baixa o APK direto e abre o instalador, sem passar pelo navegador.
+  static Future<void> _baixarEInstalar(
+    BuildContext context,
+    VersaoDisponivel versao,
+  ) async {
+    if (versao.urlApk.isEmpty) {
+      // Fallback: abre o GitHub se não houver APK direto
+      if (context.mounted) Navigator.of(context).pop();
+      await launchUrl(
+        Uri.parse(versao.urlRelease),
+        mode: LaunchMode.externalApplication,
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(); // fecha o diálogo de atualização
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Baixando atualização...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final res = await http.get(Uri.parse(versao.urlApk));
+      if (res.statusCode != 200) throw 'HTTP ${res.statusCode}';
+
+      final dir = await getTemporaryDirectory();
+      final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
+      await arquivo.writeAsBytes(res.bodyBytes);
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // fecha o "baixando"
+
+      final resultado = await OpenFile.open(arquivo.path);
+      if (resultado.type != ResultType.done && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível abrir o APK: ${resultado.message}'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // fecha o "baixando"
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao baixar: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -220,16 +289,7 @@ class DialogoAtualizacao extends StatelessWidget {
                 ? 'Baixar (${versao.tamanhoMb.toStringAsFixed(0)} MB)'
                 : 'Baixar',
           ),
-          onPressed: () async {
-            final url = versao.urlApk.isNotEmpty
-                ? versao.urlApk
-                : versao.urlRelease;
-            await launchUrl(
-              Uri.parse(url),
-              mode: LaunchMode.externalApplication,
-            );
-            if (context.mounted) Navigator.of(context).pop();
-          },
+          onPressed: () async => _baixarEInstalar(context, versao),
         ),
       ],
     );
