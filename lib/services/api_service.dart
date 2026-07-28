@@ -32,9 +32,49 @@ class ApiService {
   // ─── Inicialização ─────────────────────────────────────────────────────────
 
   /// Deve ser chamado em main() antes de runApp para carregar o token salvo.
+  /// Valida se o token expirou; se expirou, limpa para forçar novo login.
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
-    _authToken = prefs.getString(_kTokenKey);
+    final token = prefs.getString(_kTokenKey);
+    _authToken = token;
+
+    if (token != null && _tokenExpirou(token)) {
+      await _clearToken();
+    }
+  }
+
+  /// Verifica se o token JWT expirou olhando o claim 'exp' no payload.
+  /// Sem decodificar a assinatura, só sabe se o timestamp passou.
+  static bool _tokenExpirou(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return false;
+
+      // Decode payload (base64url)
+      String payload = parts[1];
+      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+      switch (payload.length % 4) {
+        case 2:
+          payload += '==';
+          break;
+        case 3:
+          payload += '=';
+          break;
+      }
+      final decoded = utf8.decode(base64Url.decode(payload));
+      final json = jsonDecode(decoded) as Map<String, dynamic>;
+      final exp = json['exp'] as int?;
+
+      if (exp == null) return false;
+
+      final expirationTime =
+          DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      return expirationTime.isBefore(DateTime.now());
+    } catch (_) {
+      // Se não conseguir decodificar, assume que está ok para não deixar
+      // o app inteiro quebrado por token malformado.
+      return false;
+    }
   }
 
   // ─── Token ─────────────────────────────────────────────────────────────────
