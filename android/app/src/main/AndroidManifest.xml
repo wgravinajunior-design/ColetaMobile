@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Sem isto o Android bloqueia a abertura do instalador do APK baixado
+         pela atualizacao: OpenFile retorna sem erro e a tela fica parada. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- android:label sem numero de versao: era ele que aparecia como "1.2" na
          instalacao e no lancador, desatualizado a cada release. A versao real
          ja vem do versionName, gerado a partir do pubspec. -->

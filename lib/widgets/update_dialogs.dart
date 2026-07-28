@@ -251,55 +251,45 @@ class DialogoAtualizacao extends StatelessWidget {
       final tamanhoTotal = res.bodyBytes.length.toDouble();
       debugPrint('[Update] Download concluído: ${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB');
 
-      // Atualiza UI para 100%
-      progresso = 1.0;
-      statusTexto = 'Finalizando...';
-      atualizarDialogo(() {});
-
-      // Pequeno delay para mostrar 100% ao usuário
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Salva o arquivo
       debugPrint('[Update] Salvando arquivo...');
       final dir = await getTemporaryDirectory();
       final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
       await arquivo.writeAsBytes(res.bodyBytes);
 
-      debugPrint('[Update] Arquivo salvo em ${arquivo.path} (${arquivo.lengthSync()} bytes)');
+      debugPrint('[Update] Arquivo salvo: ${arquivo.path}');
 
-      if (!context.mounted) {
-        debugPrint('[Update] Context não mounted após salvar');
-        return;
-      }
+      // Atualiza UI para 100%
+      progresso = 1.0;
+      statusTexto = 'Abrindo instalador...';
 
-      // Fecha o diálogo ANTES de tentar abrir o APK
       try {
-        Navigator.of(context).pop();
-        debugPrint('[Update] Diálogo fechado');
+        atualizarDialogo(() {});
       } catch (e) {
-        debugPrint('[Update] Erro ao fechar diálogo: $e');
+        debugPrint('[Update] Erro ao atualizar UI: $e');
       }
 
-      // Aguarda um pouco para o diálogo desaparecer
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Fecha o diálogo
+      if (context.mounted) {
+        try {
+          Navigator.of(context).pop();
+          debugPrint('[Update] Diálogo fechado');
+        } catch (e) {
+          debugPrint('[Update] Erro ao fechar: $e');
+        }
+      }
 
-      debugPrint('[Update] Abrindo instalador...');
+      debugPrint('[Update] Abrindo instalador do Android...');
 
       // Abre o instalador
       final resultado = await OpenFile.open(arquivo.path);
-      debugPrint('[Update] OpenFile resultado: ${resultado.type} - ${resultado.message}');
+      debugPrint('[Update] OpenFile: ${resultado.type} - ${resultado.message}');
 
       if (resultado.type != ResultType.done) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Não foi possível abrir: ${resultado.message}',
-              ),
-            ),
+            SnackBar(content: Text('Erro: ${resultado.message}')),
           );
         }
-        throw 'OpenFile falhou: ${resultado.message}';
       }
     } catch (e) {
       debugPrint('[Update] ❌ Erro: $e');
