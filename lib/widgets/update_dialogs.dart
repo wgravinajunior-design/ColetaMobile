@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -182,21 +183,47 @@ class DialogoAtualizacao extends StatelessWidget {
     Navigator.of(context).pop(); // fecha o diálogo de atualização
 
     if (!context.mounted) return;
+
+    // Variáveis mutáveis que serão atualizadas durante o download
+    late StateSetter atualizarDialogo;
+    double progresso = 0.0;
+    String statusTexto = 'Conectando...';
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setState) {
+          atualizarDialogo = setState;
+          return AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(statusTexto, style: const TextStyle(fontSize: 14)),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progresso,
+                    minHeight: 8,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${(progresso * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textLight,
+                  ),
+                ),
+              ],
             ),
-            SizedBox(width: 16),
-            Expanded(child: Text('Baixando atualização...')),
-          ],
-        ),
+          );
+        },
       ),
     );
 
@@ -204,57 +231,78 @@ class DialogoAtualizacao extends StatelessWidget {
       // Tenta usar a URL do APK direto
       var url = versao.urlApk;
       if (url.isEmpty) {
-        // Fallback: extrai o link do APK da página da release
-        debugPrint('[Update] URL do APK vazia, tentando extrair da página...');
-        url = 'https://github.com/${repoAtualizacao}/releases/download/'
-            'v${versao.versao}/ColetaMobile-v${versao.versao}-'
-            'build*-release.apk';
-        // GitHub redireciona automaticamente pro arquivo mais recente
         url = 'https://github.com/${repoAtualizacao}/releases/download/'
             'v${versao.versao}/';
       }
 
-      final res = await http.get(Uri.parse(url), headers: {
-        'Accept': 'application/vnd.android.package-archive',
-      }).timeout(const Duration(seconds: 30));
+      final client = http.Client();
+      final req = http.Request('GET', Uri.parse(url))
+        ..headers['Accept'] = 'application/vnd.android.package-archive';
 
-      if (res.statusCode != 200 && res.statusCode != 302) {
-        throw 'HTTP ${res.statusCode}';
+      final streamRes = await client.send(req).timeout(
+        const Duration(seconds: 30),
+      );
+
+      if (streamRes.statusCode != 200 && streamRes.statusCode != 302) {
+        throw 'HTTP ${streamRes.statusCode}';
       }
 
-      // Se recebeu um redirect, segue
-      var bodyBytes = res.bodyBytes;
-      if (res.statusCode == 302 && bodyBytes.isEmpty) {
-        final redirect = res.headers['location'];
-        if (redirect != null) {
-          final res2 = await http.get(Uri.parse(redirect))
-              .timeout(const Duration(seconds: 30));
-          if (res2.statusCode != 200) throw 'HTTP ${res2.statusCode}';
-          bodyBytes = res2.bodyBytes;
-        }
-      }
+      final tamanhoTotal =
+          streamRes.contentLength ?? versao.tamanhoBytes.toDouble();
+      double tamanhoRecebido = 0.0;
+      final chunks = <int>[];
+      String mensagemErro = '';
 
-      if (bodyBytes.isEmpty) throw 'Nenhum arquivo foi baixado';
+      // Aguarda o stream completar
+      await streamRes.stream.forEach((chunk) {
+        chunks.addAll(chunk);
+        tamanhoRecebido += chunk.length;
+        progresso = tamanhoTotal > 0
+            ? (tamanhoRecebido / tamanhoTotal).clamp(0.0, 1.0)
+            : 0.0;
+        statusTexto =
+            'Baixando ${(tamanhoRecebido / 1048576).toStringAsFixed(1)} MB'
+            '/${(tamanhoTotal / 1048576).toStringAsFixed(1)} MB';
 
+        atualizarDialogo(() {
+          // Força rebuild do diálogo com os novos valores
+        });
+      }).catchError((e) {
+        mensagemErro = 'Erro no download: $e';
+        throw e;
+      });
+
+      if (mensagemErro.isNotEmpty) throw mensagemErro;
+      if (chunks.isEmpty) throw 'Nenhum arquivo foi baixado';
+
+      // Salva o arquivo
       final dir = await getTemporaryDirectory();
       final arquivo = File('${dir.path}/ColetaMobile-${versao.versao}.apk');
-      await arquivo.writeAsBytes(bodyBytes);
+      await arquivo.writeAsBytes(chunks);
 
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // fecha o "baixando"
+      Navigator.of(context).pop(); // fecha o diálogo de progresso
 
+      // Abre o instalador
       final resultado = await OpenFile.open(arquivo.path);
       if (resultado.type != ResultType.done && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Não foi possível abrir o APK: ${resultado.message}'),
+            content: Text(
+              'Não foi possível abrir o APK: ${resultado.message}',
+            ),
           ),
         );
       }
     } catch (e) {
       debugPrint('[Update] Erro ao baixar direto: $e');
       if (!context.mounted) return;
-      Navigator.of(context).pop(); // fecha o "baixando"
+
+      try {
+        Navigator.of(context).pop(); // fecha o diálogo de progresso
+      } catch (_) {
+        // Já foi fechado
+      }
 
       // Fallback: abre o GitHub
       ScaffoldMessenger.of(context).showSnackBar(
