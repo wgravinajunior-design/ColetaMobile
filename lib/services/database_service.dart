@@ -245,6 +245,22 @@ class DatabaseService {
         ORDER BY cr.data_coleta DESC, cr.id DESC
       ''');
 
+  /// Retorna apenas rotas do motorista especificado (isolamento por usuário).
+  static Future<List<Map<String, dynamic>>> getColetasRotaPorMotorista(
+    int motoristaId,
+  ) async =>
+      (await database).rawQuery('''
+        SELECT cr.*,
+               m.nome      AS motorista_nome,
+               v.descricao AS veiculo_descricao,
+               v.placa     AS veiculo_placa
+        FROM coletas_rota cr
+        JOIN motoristas m ON cr.id_motorista = m.id
+        JOIN veiculos   v ON cr.id_veiculo   = v.id
+        WHERE cr.id_motorista = ?
+        ORDER BY cr.data_coleta DESC, cr.id DESC
+      ''', [motoristaId]);
+
   // ---- CRUD: Coletas Detalhe ----
 
   static Future<int> insertColetaDetalhe(Map<String, dynamic> data) async =>

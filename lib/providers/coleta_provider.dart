@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
+import '../services/auth_context.dart';
 
 // ============================================================================
 // ENUMS
@@ -237,6 +238,18 @@ class ColetaProvider extends ChangeNotifier {
   List<Colaborador> get colaboradores => List.unmodifiable(_colaboradores);
   List<Rota> get rotas => List.unmodifiable(_rotas);
 
+  /// Retorna apenas rotas do motorista logado (se for motorista).
+  /// Admin/Gestor vê todas as rotas.
+  List<Rota> get rotasDoMotoristaLogado {
+    if (!AuthContext.ehMotorista) {
+      return List.unmodifiable(_rotas); // Admin vê tudo
+    }
+    // Motorista vê apenas suas rotas
+    return _rotas
+        .where((r) => r.motoristaId == AuthContext.motoristaId)
+        .toList();
+  }
+
   List<ColetaDetalhe> get coletasDoDia =>
       _rotas.isNotEmpty ? _rotas.first.coletas : [];
   double get totalLitrosColetados =>
@@ -465,7 +478,11 @@ class ColetaProvider extends ChangeNotifier {
     final veicRows = await DatabaseService.getVeiculos();
     final motRows = await DatabaseService.getMotoristas();
     final colabRows = await DatabaseService.getColaboradores();
-    final rotaRows = await DatabaseService.getColetasRotaComJoin();
+
+    // Filtrar rotas se for motorista logado (isolamento por usuário)
+    final rotaRows = AuthContext.ehMotorista
+        ? await DatabaseService.getColetasRotaPorMotorista(AuthContext.motoristaId!)
+        : await DatabaseService.getColetasRotaComJoin();
 
     _resfriadores.addAll(resRows.map(_resfriadorFromMap));
     _produtores.addAll(prodRows.map(_produtorFromMap));

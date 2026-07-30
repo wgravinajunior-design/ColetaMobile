@@ -4,6 +4,8 @@ import '../main.dart' show AppColors;
 import '../providers/coleta_provider.dart';
 import '../services/server_config.dart';
 import '../services/api_service.dart';
+import '../services/auth_context.dart';
+import '../services/database_service.dart';
 import '../services/perfil.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialogs.dart';
@@ -98,7 +100,23 @@ class _HomePageState extends State<HomePage> {
           ElevatedButton(
             onPressed: () async {
               Navigator.of(context).pop();
+
+              // Limpar contexto de autenticação
+              await AuthContext.logout();
+
+              // Limpar cache local (SQLite)
+              final db = await DatabaseService.database;
+              await db.delete('coletas_rota');
+              await db.delete('coletas_detalhe');
+              await db.delete('motoristas');
+              await db.delete('veiculos');
+              await db.delete('produtores');
+              await db.delete('resfriadores');
+              await db.delete('colaboradores');
+
+              // Logout API
               await ApiService.logout();
+
               if (context.mounted) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const LoginPage()),

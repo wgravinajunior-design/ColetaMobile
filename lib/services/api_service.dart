@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'server_config.dart';
 import 'sessao_offline.dart';
 import 'database_service.dart';
+import 'auth_context.dart';
 
 const _kTimeout = Duration(seconds: 10);
 const _kTokenKey = 'auth_token';
@@ -274,12 +275,65 @@ class ApiService {
 
   /// Só os dados operacionais (rotas + detalhes), que mudam durante o turno.
   /// Usar no polling periódico para não re-baixar cadastros à toa (cache leve).
+  /// Se o usuário logado é motorista, sincroniza apenas suas rotas.
   static Future<bool> syncOperacional() async {
+    // Se é motorista, sincroniza apenas suas rotas
+    if (AuthContext.ehMotorista) {
+      return syncOperacionalMotorista(AuthContext.motoristaId!);
+    }
+    // Se é gestor/admin, sincroniza todas
+    return syncOperacionalAdmin();
+  }
+
+  /// Sincronização operacional para motorista logado.
+  /// Baixa apenas rotas e detalhes do motorista vinculado.
+  static Future<bool> syncOperacionalMotorista(int motoristaId) async {
+    try {
+      final res = await _get('/coleta/rotas/motorista/$motoristaId');
+      if (res.statusCode != 200) {
+        debugPrint(
+          '[ApiService] ${res.request?.url} → ${res.statusCode}: ${res.body}',
+        );
+        return false;
+      }
+
+      final list = _extractList(res.body);
+      for (final item in list) {
+        final m = item as Map<String, dynamic>;
+        final rotaId = m['id'] as int;
+        final status = m['status'] ?? 'PENDENTE';
+
+        await DatabaseService.upsertColetaRota({
+          'id': rotaId,
+          'nome': m['nome'] ?? '',
+          'id_motorista': m['id_motorista'] ?? 0,
+          'id_veiculo': m['id_veiculo'] ?? 0,
+          'data_coleta': m['data_coleta'] ?? '',
+          'data_hora_inicio': m['data_hora_inicio'],
+          'data_hora_fim': m['data_hora_fim'],
+          'status': status,
+        });
+
+        // Rota concluída não muda mais — no ciclo leve, não re-baixa os detalhes.
+        if (status == 'CONCLUIDA') continue;
+        await _syncDetalhesRota(rotaId);
+      }
+      return true;
+    } catch (e, st) {
+      debugPrint('[ApiService.syncOperacionalMotorista] Falha: $e');
+      debugPrint('$st');
+      return false;
+    }
+  }
+
+  /// Sincronização operacional para admin/gestor.
+  /// Baixa todas as rotas e detalhes.
+  static Future<bool> syncOperacionalAdmin() async {
     try {
       await _syncRotas(soAtivas: true);
       return true;
     } catch (e, st) {
-      debugPrint('[ApiService.syncOperacional] Falha: $e');
+      debugPrint('[ApiService.syncOperacionalAdmin] Falha: $e');
       debugPrint('$st');
       return false;
     }

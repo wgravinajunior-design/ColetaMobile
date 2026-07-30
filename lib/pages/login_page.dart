@@ -3,6 +3,7 @@ import '../main.dart' show AppColors;
 import '../services/server_config.dart';
 import '../services/api_service.dart';
 import '../services/update_service.dart';
+import '../services/auth_context.dart';
 import '../widgets/update_dialogs.dart';
 import 'home_page.dart';
 
@@ -85,6 +86,16 @@ class _LoginPageState extends State<LoginPage> {
       );
       if (!mounted) return;
       final perfil = (user['perfil'] as String?) ?? 'OPERADOR';
+
+      // Armazenar contexto de autenticação
+      AuthContext.inicializar(
+        id: user['id'] as int,
+        login: user['login'] as String,
+        perfil: perfil,
+        motoristaIdVinculado: user['motorista_id'] as int?,
+        motoristaLoginVinculado: user['motorista_login'] as String?,
+      );
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => HomePage(userRole: perfil)),
       );
