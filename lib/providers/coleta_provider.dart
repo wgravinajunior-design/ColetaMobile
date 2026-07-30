@@ -160,6 +160,7 @@ class Rota {
   final int id;
   final String nome;
   final String veiculoDescricao;
+  final int motoristaId;
   final String motoristaNome;
   final DateTime data;
   RotaStatus status;
@@ -171,6 +172,7 @@ class Rota {
     required this.id,
     required this.nome,
     required this.veiculoDescricao,
+    required this.motoristaId,
     required this.motoristaNome,
     required this.data,
     this.status = RotaStatus.pendente,
@@ -594,6 +596,7 @@ class ColetaProvider extends ChangeNotifier {
     id: m['id'] as int,
     nome: m['nome'] as String,
     veiculoDescricao: '${m['veiculo_placa']} · ${m['veiculo_descricao']}',
+    motoristaId: (m['id_motorista'] as int?) ?? 0,
     motoristaNome: m['motorista_nome'] as String,
     data: DateTime.parse(m['data_coleta'] as String),
     status: _parseRotaStatus(m['status'] as String),
