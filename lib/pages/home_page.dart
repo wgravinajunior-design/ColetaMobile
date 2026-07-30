@@ -102,7 +102,7 @@ class _HomePageState extends State<HomePage> {
               Navigator.of(context).pop();
 
               // Limpar contexto de autenticação
-              await AuthContext.logout();
+              AuthContext.logout();
 
               // Limpar cache local (SQLite)
               final db = await DatabaseService.database;

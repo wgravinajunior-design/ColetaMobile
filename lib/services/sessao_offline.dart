@@ -16,6 +16,8 @@ class SessaoOffline {
   static const _kPerfil = 'offline_perfil';
   static const _kNome = 'offline_nome';
   static const _kQuando = 'offline_quando';
+  static const _kUsuarioId = 'offline_usuario_id';
+  static const _kMotoristaId = 'offline_motorista_id';
 
   /// Quanto tempo a credencial em cache continua valendo sem novo login online.
   static const validade = Duration(days: 30);
@@ -24,11 +26,17 @@ class SessaoOffline {
       sha256.convert(utf8.encode('$login::$senha')).toString();
 
   /// Chamado após um login online bem-sucedido.
+  ///
+  /// Guarda também o motorista vinculado: sem ele, um motorista que entrasse
+  /// offline seria tratado como usuário sem vínculo e o app baixaria as rotas
+  /// de todos — exatamente o que o vínculo existe para evitar.
   static Future<void> guardar({
     required String login,
     required String senha,
     required String perfil,
     required String nome,
+    int? usuarioId,
+    int? motoristaId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLogin, login.trim());
@@ -36,6 +44,16 @@ class SessaoOffline {
     await prefs.setString(_kPerfil, perfil);
     await prefs.setString(_kNome, nome);
     await prefs.setString(_kQuando, DateTime.now().toIso8601String());
+    if (usuarioId == null) {
+      await prefs.remove(_kUsuarioId);
+    } else {
+      await prefs.setInt(_kUsuarioId, usuarioId);
+    }
+    if (motoristaId == null) {
+      await prefs.remove(_kMotoristaId);
+    } else {
+      await prefs.setInt(_kMotoristaId, motoristaId);
+    }
   }
 
   /// Valida a credencial informada contra a que ficou guardada.
@@ -61,9 +79,11 @@ class SessaoOffline {
     }
 
     return {
-      'id': guardado,
+      'id': prefs.getInt(_kUsuarioId),
+      'login': guardado,
       'nome': prefs.getString(_kNome) ?? guardado,
       'perfil': prefs.getString(_kPerfil) ?? 'OPERADOR',
+      'motorista_id': prefs.getInt(_kMotoristaId),
       'offline': true,
     };
   }
@@ -78,7 +98,15 @@ class SessaoOffline {
 
   static Future<void> limpar() async {
     final prefs = await SharedPreferences.getInstance();
-    for (final k in [_kLogin, _kSenhaHash, _kPerfil, _kNome, _kQuando]) {
+    for (final k in [
+      _kLogin,
+      _kSenhaHash,
+      _kPerfil,
+      _kNome,
+      _kQuando,
+      _kUsuarioId,
+      _kMotoristaId,
+    ]) {
       await prefs.remove(k);
     }
   }

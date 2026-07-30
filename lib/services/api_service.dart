@@ -208,6 +208,9 @@ class ApiService {
           senha: senha,
           perfil: (data['perfil'] as String?) ?? 'OPERADOR',
           nome: (data['nome'] as String?) ?? login,
+          usuarioId: data['id'] is int ? data['id'] as int : null,
+          motoristaId:
+              data['motorista_id'] is int ? data['motorista_id'] as int : null,
         );
         return data;
       }

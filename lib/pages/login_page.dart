@@ -85,16 +85,11 @@ class _LoginPageState extends State<LoginPage> {
         _passwordController.text,
       );
       if (!mounted) return;
-      final perfil = (user['perfil'] as String?) ?? 'OPERADOR';
 
-      // Armazenar contexto de autenticação
-      AuthContext.inicializar(
-        id: user['id'] as int,
-        login: user['login'] as String,
-        perfil: perfil,
-        motoristaIdVinculado: user['motorista_id'] as int?,
-        motoristaLoginVinculado: user['motorista_login'] as String?,
-      );
+      // Antes de navegar: é o que decide se este aparelho vai baixar as rotas
+      // de um motorista só ou as de todos.
+      AuthContext.inicializar(user);
+      final perfil = AuthContext.usuarioPerfil;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => HomePage(userRole: perfil)),
