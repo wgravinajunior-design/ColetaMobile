@@ -233,15 +233,22 @@ class DatabaseService {
     );
   }
 
+  /// Junções propositalmente frouxas (LEFT JOIN).
+  ///
+  /// Motorista e veículo vêm de sincronizações separadas da rota. Se uma delas
+  /// falha — servidor lento, cadastro criado depois — a rota existe no aparelho
+  /// mas o vínculo não. Com junção fechada a rota simplesmente sumia da lista,
+  /// e o motorista via a tela vazia sem entender por quê. Agora ela aparece,
+  /// com o campo faltando marcado como "—".
   static Future<List<Map<String, dynamic>>> getColetasRotaComJoin() async =>
       (await database).rawQuery('''
         SELECT cr.*,
-               m.nome      AS motorista_nome,
-               v.descricao AS veiculo_descricao,
-               v.placa     AS veiculo_placa
+               COALESCE(m.nome, '—')      AS motorista_nome,
+               COALESCE(v.descricao, '—') AS veiculo_descricao,
+               COALESCE(v.placa, '—')     AS veiculo_placa
         FROM coletas_rota cr
-        JOIN motoristas m ON cr.id_motorista = m.id
-        JOIN veiculos   v ON cr.id_veiculo   = v.id
+        LEFT JOIN motoristas m ON cr.id_motorista = m.id
+        LEFT JOIN veiculos   v ON cr.id_veiculo   = v.id
         ORDER BY cr.data_coleta DESC, cr.id DESC
       ''');
 
@@ -251,12 +258,12 @@ class DatabaseService {
   ) async =>
       (await database).rawQuery('''
         SELECT cr.*,
-               m.nome      AS motorista_nome,
-               v.descricao AS veiculo_descricao,
-               v.placa     AS veiculo_placa
+               COALESCE(m.nome, '—')      AS motorista_nome,
+               COALESCE(v.descricao, '—') AS veiculo_descricao,
+               COALESCE(v.placa, '—')     AS veiculo_placa
         FROM coletas_rota cr
-        JOIN motoristas m ON cr.id_motorista = m.id
-        JOIN veiculos   v ON cr.id_veiculo   = v.id
+        LEFT JOIN motoristas m ON cr.id_motorista = m.id
+        LEFT JOIN veiculos   v ON cr.id_veiculo   = v.id
         WHERE cr.id_motorista = ?
         ORDER BY cr.data_coleta DESC, cr.id DESC
       ''', [motoristaId]);
@@ -344,20 +351,27 @@ class DatabaseService {
         0;
   }
 
+  /// Paradas de uma rota, com os dados do produtor.
+  ///
+  /// LEFT JOIN de propósito: o cadastro de produtores é baixado num pedido
+  /// separado do das paradas. Quando aquele pedido falhava, a junção fechada
+  /// devolvia zero linhas e a tela da rota abria em branco — sem nenhuma
+  /// fazenda, como se a rota estivesse vazia. Melhor mostrar a parada com o
+  /// nome pendente de sincronização do que esconder a rota inteira.
   static Future<List<Map<String, dynamic>>> getColetasDetalheComJoin(int idColetaRota) async =>
       (await database).rawQuery('''
         SELECT cd.*,
-               p.nome                    AS produtor_nome,
-               p.endereco                AS produtor_endereco,
-               p.latitude,
-               p.longitude,
-               p.volume_medio_diario,
-               p.horario_coleta_previsto,
-               p.km_ate_tanque_principal,
+               COALESCE(p.nome, 'Produtor ' || cd.id_produtor) AS produtor_nome,
+               COALESCE(p.endereco, 'Endereço não sincronizado') AS produtor_endereco,
+               COALESCE(p.latitude, 0)                 AS latitude,
+               COALESCE(p.longitude, 0)                AS longitude,
+               COALESCE(p.volume_medio_diario, 0)      AS volume_medio_diario,
+               COALESCE(p.horario_coleta_previsto, '') AS horario_coleta_previsto,
+               COALESCE(p.km_ate_tanque_principal, 0)  AS km_ate_tanque_principal,
                p.id_resfriador,
-               p.status                  AS produtor_status
+               COALESCE(p.status, 'ATIVO')             AS produtor_status
         FROM coletas_detalhe cd
-        JOIN produtores p ON cd.id_produtor = p.id
+        LEFT JOIN produtores p ON cd.id_produtor = p.id
         WHERE cd.id_coleta_rota = ?
         ORDER BY cd.ordem_visita
       ''', [idColetaRota]);

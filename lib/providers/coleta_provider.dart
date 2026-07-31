@@ -190,7 +190,11 @@ class Rota {
       coletas.where((c) => c.status == ColetaStatus.adiado).length;
   int get pendentes =>
       coletas.where((c) => c.status == ColetaStatus.pendente).length;
-  bool get todasResolvidas => coletas.every((c) => c.resolvido);
+  /// Rota sem nenhuma parada não conta como resolvida: quase sempre significa
+  /// que os detalhes ainda não desceram, e oferecer "finalizar" nesse estado
+  /// encerraria uma rota que nem começou.
+  bool get todasResolvidas =>
+      coletas.isNotEmpty && coletas.every((c) => c.resolvido);
   double get totalLitros => coletas.fold(
     0.0,
     (s, c) =>
@@ -272,6 +276,7 @@ class ColetaProvider extends ChangeNotifier {
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    _retryTimer?.cancel();
     _connSub?.cancel();
     super.dispose();
   }
@@ -297,15 +302,21 @@ class ColetaProvider extends ChangeNotifier {
     _syncStatus = SyncStatus.syncing;
     notifyListeners();
 
-    // Envia primeiro o que ficou pendente de sessões anteriores,
-    // depois baixa as novidades do ERP (o download preserva o que está pendente).
-    await flushPending();
-    final ok = await ApiService.syncAll();
-    _syncStatus = ok ? SyncStatus.ok : SyncStatus.error;
-
+    // Mostra primeiro o que já está no aparelho.
+    //
+    // Antes a tela ficava presa em "carregando" até a sincronização inteira
+    // terminar — e numa rede ruim isso são dezenas de segundos, com todas as
+    // rotas já baixadas ali no SQLite sem serem exibidas. Agora a lista aparece
+    // de imediato e a sincronização acontece por trás, com a faixa do topo
+    // dizendo em que pé está.
     await _loadFromDatabase();
     _isLoading = false;
     notifyListeners();
+
+    // Envia primeiro o que ficou pendente de sessões anteriores,
+    // depois baixa as novidades do ERP (o download preserva o que está pendente).
+    await flushPending();
+    await _syncCycle(full: true);
 
     // Polling a cada 2 minutos como rede de segurança (só dados operacionais).
     _pollingTimer = Timer.periodic(
@@ -318,7 +329,10 @@ class ColetaProvider extends ChangeNotifier {
       final agoraOnline = result != ConnectivityResult.none;
       final voltou = agoraOnline && !_online;
       _online = agoraOnline;
-      if (voltou) _syncCycle(full: true);
+      if (voltou) {
+        _tentativa = 0; // rede nova, recuo zerado
+        _syncCycle(full: true);
+      }
     });
   }
 
@@ -331,19 +345,41 @@ class ColetaProvider extends ChangeNotifier {
   /// disso e já faz o primeiro ciclo.
   Future<void> sincronizarAgora() async {
     if (!_iniciado) return iniciar();
-    _syncStatus = SyncStatus.syncing;
-    notifyListeners();
+    _tentativa = 0; // pedido do usuário zera o recuo entre tentativas
     await _syncCycle(full: true);
-    if (_syncStatus == SyncStatus.syncing) _syncStatus = SyncStatus.error;
-    notifyListeners();
   }
 
-  Future<void> _syncCycle({bool full = false}) async {
+  /// Quantas tentativas seguidas falharam. Zera a cada sucesso e a cada toque
+  /// do usuário na faixa de status.
+  int _tentativa = 0;
+  Timer? _retryTimer;
+
+  /// Espera antes de tentar de novo: curta na primeira falha (rede que ainda
+  /// está subindo, retaguarda reiniciando), crescendo até meio minuto para não
+  /// martelar o servidor nem gastar bateria fora de área.
+  static const _recuos = [
+    Duration(seconds: 4),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+  ];
+
+  /// Um ciclo de sincronização. Devolve se conseguiu falar com a retaguarda.
+  ///
+  /// Falhando, agenda sozinho a próxima tentativa: antes a única saída era o
+  /// polling de 2 minutos ou o usuário tocar na faixa repetidas vezes, que é
+  /// exatamente o que se via ao abrir o app antes da rede assentar.
+  Future<bool> _syncCycle({bool full = false}) async {
+    _retryTimer?.cancel();
+    _syncStatus = SyncStatus.syncing;
+    notifyListeners();
+
     await flushPending();
     final synced = full
         ? await ApiService.syncAll()
         : await ApiService.syncOperacional();
+
     if (synced) {
+      _tentativa = 0;
       _syncStatus = SyncStatus.ok;
       _resfriadores.clear();
       _produtores.clear();
@@ -352,8 +388,19 @@ class ColetaProvider extends ChangeNotifier {
       _colaboradores.clear();
       _rotas.clear();
       await _loadFromDatabase();
-      notifyListeners();
+    } else {
+      _syncStatus = SyncStatus.error;
+      _agendarNovaTentativa(full: full);
     }
+    notifyListeners();
+    return synced;
+  }
+
+  void _agendarNovaTentativa({required bool full}) {
+    if (_tentativa >= _recuos.length) return; // daqui em diante, o polling
+    final espera = _recuos[_tentativa];
+    _tentativa++;
+    _retryTimer = Timer(espera, () => _syncCycle(full: full));
   }
 
   /// Envia ao servidor todas as coletas/rotas registradas localmente e ainda
@@ -454,25 +501,8 @@ class ColetaProvider extends ChangeNotifier {
     }
   }
 
-  /// Força uma nova sincronização manual com o servidor.
-  Future<void> refresh() async {
-    _syncStatus = SyncStatus.syncing;
-    notifyListeners();
-
-    await flushPending();
-    final ok = await ApiService.syncAll();
-    _syncStatus = ok ? SyncStatus.ok : SyncStatus.error;
-
-    _resfriadores.clear();
-    _produtores.clear();
-    _veiculos.clear();
-    _motoristas.clear();
-    _colaboradores.clear();
-    _rotas.clear();
-
-    await _loadFromDatabase();
-    notifyListeners();
-  }
+  /// Força uma nova sincronização manual com o servidor (puxar para atualizar).
+  Future<void> refresh() => sincronizarAgora();
 
   Future<void> _loadFromDatabase() async {
     final resRows = await DatabaseService.getResfriadores();

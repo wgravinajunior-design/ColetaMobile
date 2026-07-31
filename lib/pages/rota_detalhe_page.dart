@@ -52,7 +52,13 @@ class RotaDetalhePage extends StatelessWidget {
               ),
               const Divider(height: 1),
 
-              // Lista de fazendas
+              // Lista de fazendas. Vazia significa que as paradas ainda não
+              // desceram do servidor — antes a tela ficava só branca aqui.
+              if (rota.coletas.isEmpty)
+                Expanded(
+                  child: _SemParadas(onSincronizar: provider.sincronizarAgora),
+                )
+              else
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.all(14),
@@ -1022,6 +1028,52 @@ class _FazendaTile extends StatelessWidget {
     const SizedBox(width: 4),
     Text(text, style: TextStyle(fontSize: 11, color: color)),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Rota sem paradas baixadas
+// ---------------------------------------------------------------------------
+class _SemParadas extends StatelessWidget {
+  final Future<void> Function() onSincronizar;
+  const _SemParadas({required this.onSincronizar});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_download_outlined, size: 44, color: AppColors.textLight),
+            const SizedBox(height: 12),
+            const Text(
+              'As fazendas desta rota ainda não chegaram ao aparelho.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.textMedium, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Conecte-se à retaguarda e sincronize para baixar as paradas.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AppColors.textLight),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onSincronizar,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.sync, size: 18),
+              label: const Text('Sincronizar agora'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
